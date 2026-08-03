@@ -1,0 +1,66 @@
+/* Tailwind is imported once, globally, in src/index.css - no need to
+   re-import here. This file only adds Video-Studio-specific layers, scoped
+   to .studio-root so it can not leak app-wide styles onto the rest of
+   AuraPost (the original version set root/star/body selectors directly,
+   which would have silently overridden the existing dark theme app-wide). */
+
+/* ==========================================================
+   Video Studio base styles (scoped to .studio-root)
+   ========================================================== */
+
+@layer base {
+  .studio-root {
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  .studio-root * {
+    border-color: var(--color-gray-200);
+  }
+
+  .studio-root {
+    font-family: var(--font-body);
+    background-color: var(--color-gray-50);
+    color: var(--color-gray-900);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .studio-root h1,
+  .studio-root h2,
+  .studio-root h3,
+  .studio-root h4,
+  .studio-root h5,
+  .studio-root h6 {
+    font-family: var(--font-display);
+  }
+
+  .studio-root code,
+  .studio-root pre,
+  .studio-root .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+/* ==========================================================
+   Utility layers
+   ========================================================== */
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}

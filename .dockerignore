@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.local
+.git
+.gitignore
+*.md
+ AuraPost/
+DEPLOYMENT/
+.vscode
+*.log
+.DS_Store

@@ -1,0 +1,23 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+
+# Logs
+*.log
+startup_out.log
+startup_err.log
+startup_error.log
+
+# Environment
+.env*
+!.env.example
+
+# Databases
+*.db
+storage/*.db
+storage/*.json
+
+# Test
+test-db.cjs
