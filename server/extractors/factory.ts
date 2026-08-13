@@ -4,6 +4,7 @@ import {
   normalizeImportPrompt,
   normalizeProductUrl,
 } from "../imports/productUrlPolicy.ts";
+import { withProductNetworkPolicy } from "../imports/productFetchRuntime.ts";
 import { IProductExtractor } from "./base.ts";
 import { ShopifyExtractor } from "./shopify.ts";
 import { WooCommerceExtractor } from "./woocommerce.ts";
@@ -23,9 +24,11 @@ class PolicyEnforcedExtractor implements IProductExtractor {
     const safeUrl = await assertPublicProductUrl(url);
     const normalizedPrompt = normalizeImportPrompt(customPrompt);
 
-    // Browser-supplied HTML is deliberately ignored. Only the verified public URL
-    // may be fetched by the server-side extractor.
-    return this.inner.extract(safeUrl, undefined, normalizedPrompt);
+    // All fetches started by the extractor, including API and description calls,
+    // run inside the shared redirect, timeout, content-type, size, and SSRF policy.
+    return withProductNetworkPolicy(() =>
+      this.inner.extract(safeUrl, undefined, normalizedPrompt),
+    );
   }
 
   public validate(product: Parameters<IProductExtractor["validate"]>[0]) {
