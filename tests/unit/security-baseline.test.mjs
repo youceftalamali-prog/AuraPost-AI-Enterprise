@@ -8,8 +8,9 @@ async function source(relativePath) {
 
 test("JWT configuration fails closed instead of generating local secrets", async () => {
   const jwtSource = await source("server/identity/services/JwtService.ts");
-  assert.match(jwtSource, /JWT_SECRET is required/);
-  assert.match(jwtSource, /JWT_REFRESH_SECRET/);
+  assert.match(jwtSource, /requireSecret\("JWT_SECRET"\)/);
+  assert.match(jwtSource, /requireSecret\("JWT_REFRESH_SECRET"\)/);
+  assert.match(jwtSource, /is required\. Refusing to generate process-local JWT secrets/);
   assert.match(jwtSource, /MINIMUM_SECRET_LENGTH = 32/);
   assert.doesNotMatch(jwtSource, /randomBytes/);
   assert.doesNotMatch(jwtSource, /globalJwtSecret/);
