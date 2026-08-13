@@ -10,8 +10,8 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 tests/unit/*.test.ts",
-    "test:api": "tsx --test --test-concurrency=1 tests/auth.test.ts tests/api.test.ts tests/security.test.ts"
+    "test": "node --import tsx --test --test-concurrency=1 tests/unit/*.test.ts",
+    "test:api": "node --import tsx --test --test-concurrency=1 tests/auth.test.ts tests/api.test.ts tests/security.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1094.0",
