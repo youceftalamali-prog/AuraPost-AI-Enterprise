@@ -14,6 +14,8 @@ const BLOCKED_HOST_SUFFIXES = [
   ".invalid",
 ];
 
+type ResolvedAddress = { address: string; family: number };
+
 function rejectUrl(message: string, code = "UNSAFE_PRODUCT_URL"): never {
   throw new AppError(message, 400, { code });
 }
@@ -109,14 +111,14 @@ export async function assertPublicProductUrl(input: string): Promise<string> {
   const hostname = normalizedIp(new URL(safeUrl).hostname);
   if (isIP(hostname) > 0) return safeUrl;
 
-  let records: Awaited<ReturnType<typeof lookup>>;
+  let records: ResolvedAddress[];
   try {
     records = await lookup(hostname, { all: true, verbatim: true });
   } catch {
     rejectUrl("The product host could not be resolved.", "PRODUCT_HOST_UNRESOLVED");
   }
 
-  if (!Array.isArray(records) || records.length === 0) {
+  if (records.length === 0) {
     rejectUrl("The product host did not resolve to an address.", "PRODUCT_HOST_UNRESOLVED");
   }
   if (records.some((record) => !isPublicIpAddress(record.address))) {
