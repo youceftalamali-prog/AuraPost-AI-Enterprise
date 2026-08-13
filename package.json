@@ -10,7 +10,7 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test --test-concurrency=1 tests/unit/*.test.ts",
+    "test": "node --test tests/unit/*.test.mjs",
     "test:api": "node --import tsx --test --test-concurrency=1 tests/auth.test.ts tests/api.test.ts tests/security.test.ts"
   },
   "dependencies": {

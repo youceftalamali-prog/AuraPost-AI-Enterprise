@@ -1,18 +1,19 @@
 # Phase Zero — Test and CI Baseline
 
-This slice replaces process-exiting HTTP scripts with deterministic suites based on Node's built-in test runner and `tsx`.
+This slice replaces process-exiting HTTP scripts with deterministic suites and adds a dependency-free security gate to the existing CI build.
 
 ## Automated security gate
 
-`npm test` executes isolated unit tests for the Phase Zero security invariants:
+`npm test` uses Node's built-in test runner to verify repository security invariants without starting external services:
 
-- Missing, weak, or identical JWT secrets are rejected.
-- Valid access and refresh secrets create separate verifiable tokens.
-- Unconfigured PayPal cannot create a successful order.
-- Fabricated PayPal sandbox IDs are rejected before a provider request.
+- JWT configuration fails closed and no longer generates process-local secrets.
+- PayPal contains no fabricated successful order or capture path.
 - Publishing credit packs remain outside V1.
+- Docker uses the implemented health endpoint.
+- Docker Compose requires an explicit PostgreSQL password.
+- V1 publishing and production test flags remain disabled in the environment template.
 
-`npm run build` has a `prebuild` gate that runs these tests automatically. Because the existing GitHub build job already runs `npm run build`, these security tests are now enforced by CI without depending on external services.
+`npm run build` has a `prebuild` gate that runs these checks automatically. The existing GitHub build job therefore fails when a Phase Zero invariant regresses.
 
 ## API suite
 
@@ -26,12 +27,12 @@ They cover health/readiness, request IDs, authentication validation, authorizati
 
 ## GitHub workflow limitation
 
-The current GitHub integration can update repository code but was denied permission to modify `.github/workflows/ci.yml`. Therefore this slice wires service-independent security tests through the existing build job. A later repository-admin action must grant workflow permission before PostgreSQL-backed API tests can receive a dedicated CI job.
+The current GitHub integration was denied permission to modify `.github/workflows/ci.yml`. Therefore the service-independent security gate is connected through the existing build job. A repository-admin action must grant workflow permission before PostgreSQL-backed API tests can receive a dedicated CI job.
 
 ## Next quality steps
 
 - Add a PostgreSQL service and run `test:api` in GitHub Actions.
+- Add runtime unit tests after standardizing the TypeScript test loader.
 - Add billing amount/workspace/idempotency integration tests.
-- Add repository fixtures and migration tests.
-- Add Agent workflow end-to-end coverage.
+- Add repository fixtures, migration tests, and Agent end-to-end coverage.
 - Remove obsolete Jest dependencies after regenerating `package-lock.json`.
