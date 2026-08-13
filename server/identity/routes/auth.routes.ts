@@ -1,42 +1,42 @@
-import { Router } from "express";
-import { AuthService } from "../services/AuthService";
-import { RegisterSchema } from "../validators/Register.validator";
-import { LoginSchema } from "../validators/Login.validator";
-import { RefreshTokenSchema } from "../validators/RefreshToken.validator";
-import { AppError } from "../../core/errors/AppError";
+import { Router } from 'express';
+import { AuthService } from '../services/AuthService';
+import { RegisterSchema } from '../validators/Register.validator';
+import { LoginSchema } from '../validators/Login.validator';
+import { AppError } from '../../core/errors/AppError';
+import {
+  clearAuthCookies,
+  getRefreshTokenFromRequest,
+  setAuthCookies,
+} from '../http/authCookies';
 
 const router = Router();
 const authService = new AuthService();
 
-// Helper to parse client IP and user agent info
 const getClientContext = (req: any) => {
-  const ipAddress = req.ip || req.headers["x-forwarded-for"] || "127.0.0.1";
-  const userAgent = req.headers["user-agent"] || "Unknown";
-  
-  // Basic platform parsing or use values passed from client or headers
-  const platform = req.headers["sec-ch-ua-platform"] || undefined;
-  
+  const ipAddress = req.ip || req.headers['x-forwarded-for'] || '127.0.0.1';
+  const userAgent = req.headers['user-agent'] || 'Unknown';
+  const platform = req.headers['sec-ch-ua-platform'] || undefined;
+
   return {
     ipAddress: Array.isArray(ipAddress) ? ipAddress[0] : String(ipAddress),
     userAgent,
-    platform: platform ? String(platform).replace(/"/g, "") : undefined,
+    platform: platform ? String(platform).replace(/"/g, '') : undefined,
   };
 };
 
-// 1. POST /api/auth/register
-router.post("/register", async (req, res) => {
+router.post('/register', async (req, res) => {
   try {
     const validated = RegisterSchema.safeParse(req.body);
     if (!validated.success) {
       return res.status(400).json({
-        error: "Validation failed",
+        error: 'Validation failed',
         details: validated.error.flatten().fieldErrors,
       });
     }
 
     const result = await authService.register(validated.data);
     return res.status(201).json({
-      message: "Registration successful",
+      message: 'Registration successful',
       user: {
         id: result.user.id,
         firstName: result.user.firstName,
@@ -50,29 +50,27 @@ router.post("/register", async (req, res) => {
   } catch (error: any) {
     const statusCode = error instanceof AppError ? error.statusCode : 500;
     return res.status(statusCode).json({
-      error: error.message || "Internal server error",
+      error: error.message || 'Internal server error',
     });
   }
 });
 
-// 2. POST /api/auth/login
-router.post("/login", async (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const validated = LoginSchema.safeParse(req.body);
     if (!validated.success) {
       return res.status(400).json({
-        error: "Validation failed",
+        error: 'Validation failed',
         details: validated.error.flatten().fieldErrors,
       });
     }
 
     const context = getClientContext(req);
     const result = await authService.login(validated.data, context);
+    setAuthCookies(res, result.accessToken, result.refreshToken);
 
     return res.status(200).json({
-      message: "Login successful",
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
+      message: 'Login successful',
       user: {
         id: result.user.id,
         firstName: result.user.firstName,
@@ -86,58 +84,50 @@ router.post("/login", async (req, res) => {
   } catch (error: any) {
     const statusCode = error instanceof AppError ? error.statusCode : 500;
     return res.status(statusCode).json({
-      error: error.message || "Internal server error",
+      error: error.message || 'Internal server error',
     });
   }
 });
 
-// 3. POST /api/auth/refresh
-router.post("/refresh", async (req, res) => {
+router.post('/refresh', async (req, res) => {
   try {
-    const validated = RefreshTokenSchema.safeParse(req.body);
-    if (!validated.success) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: validated.error.flatten().fieldErrors,
-      });
+    const refreshToken = getRefreshTokenFromRequest(req);
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'Refresh token is required.' });
     }
 
     const context = getClientContext(req);
-    const result = await authService.refresh(validated.data.refreshToken, context);
+    const result = await authService.refresh(refreshToken, context);
+    setAuthCookies(res, result.accessToken, result.refreshToken);
 
     return res.status(200).json({
-      message: "Token refreshed successfully",
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
+      message: 'Token refreshed successfully',
     });
   } catch (error: any) {
+    clearAuthCookies(res);
     const statusCode = error instanceof AppError ? error.statusCode : 500;
     return res.status(statusCode).json({
-      error: error.message || "Internal server error",
+      error: error.message || 'Internal server error',
     });
   }
 });
 
-// 4. POST /api/auth/logout
-router.post("/logout", async (req, res) => {
+router.post('/logout', async (req, res) => {
+  const refreshToken = getRefreshTokenFromRequest(req);
+  clearAuthCookies(res);
+
   try {
-    const validated = RefreshTokenSchema.safeParse(req.body);
-    if (!validated.success) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: validated.error.flatten().fieldErrors,
-      });
+    if (refreshToken) {
+      await authService.logout(refreshToken);
     }
-
-    await authService.logout(validated.data.refreshToken);
-
-    return res.status(200).json({
-      message: "Logout successful",
-    });
+    return res.status(200).json({ message: 'Logout successful' });
   } catch (error: any) {
+    if (error instanceof AppError && (error.statusCode === 401 || error.statusCode === 404)) {
+      return res.status(200).json({ message: 'Logout successful' });
+    }
     const statusCode = error instanceof AppError ? error.statusCode : 500;
     return res.status(statusCode).json({
-      error: error.message || "Internal server error",
+      error: error.message || 'Internal server error',
     });
   }
 });

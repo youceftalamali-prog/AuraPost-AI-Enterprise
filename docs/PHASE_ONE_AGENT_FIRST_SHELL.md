@@ -15,6 +15,15 @@ Replace the module-heavy portal navigation with one guided Aura workspace for V1
 - Added a typed client for `GET /api/features` with a fail-closed V1 fallback.
 - Preserved a direct settings control as a workspace utility, not a production workflow module.
 
+## Authentication transport
+
+- Access and refresh JWTs are issued only as HttpOnly cookies.
+- Production cookies are `Secure` and all authentication cookies use `SameSite=Strict`.
+- The short-lived access cookie is limited to `/api`; the refresh cookie is limited to `/api/auth`.
+- Login and refresh responses no longer expose JWT values to browser JavaScript.
+- The frontend no longer persists authentication tokens in Web Storage.
+- Bearer tokens remain accepted for non-browser API clients and automated tests.
+
 ## V1 workflow
 
 1. Select a template or describe the campaign.

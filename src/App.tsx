@@ -4,9 +4,6 @@ import LoginCard from './components/LoginCard';
 import { AgentFirstWorkspace } from './features/agent-shell/AgentFirstWorkspace';
 import type { AuditLog, Session, User, Workspace } from './types';
 
-const ACCESS_TOKEN_KEY = 'aurapost_access_token';
-const REFRESH_TOKEN_KEY = 'aurapost_refresh_token';
-
 function buildUser(
   email: string,
   fullName: string,
@@ -31,33 +28,23 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   useEffect(() => {
-    const savedAccess = localStorage.getItem(ACCESS_TOKEN_KEY);
-    const savedRefresh = localStorage.getItem(REFRESH_TOKEN_KEY);
-
-    if (savedAccess && savedRefresh) {
-      fetch('/api/workspace', {
-        headers: { Authorization: `Bearer ${savedAccess}` },
+    fetch('/api/workspace', { credentials: 'same-origin' })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
       })
-        .then(async (response) => {
-          if (!response.ok) throw new Error('Saved session is no longer valid.');
-          return response.json();
-        })
-        .then((data) => {
-          if (!data?.user) throw new Error('Workspace response did not include a user.');
-          const workspace = data.workspace || null;
-          if (workspace) setWorkspaces([workspace]);
-          setSession({
-            accessToken: savedAccess,
-            refreshToken: savedRefresh,
-            user: data.user,
-            workspace,
-          });
-        })
-        .catch(() => {
-          localStorage.removeItem(ACCESS_TOKEN_KEY);
-          localStorage.removeItem(REFRESH_TOKEN_KEY);
+      .then((data) => {
+        if (!data?.user) return;
+        const workspace = data.workspace || null;
+        if (workspace) setWorkspaces([workspace]);
+        setSession({
+          accessToken: '',
+          refreshToken: '',
+          user: data.user,
+          workspace,
         });
-    }
+      })
+      .catch(() => undefined);
 
     fetch('/api/health')
       .then((response) => (response.ok ? response.json() : null))
@@ -81,20 +68,16 @@ export default function App() {
     ]);
   };
 
-  const persistSession = (
+  const createSession = (
     email: string,
     fullName: string,
     role: string,
     workspace: Workspace,
-    accessToken = '',
-    refreshToken = '',
   ) => {
-    localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-    localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
     setWorkspaces([workspace]);
     setSession({
-      accessToken,
-      refreshToken,
+      accessToken: '',
+      refreshToken: '',
       user: buildUser(email, fullName, role, workspace.id),
       workspace,
     });
@@ -105,13 +88,11 @@ export default function App() {
     fullName: string,
     workspaceId: string,
     role: string,
-    accessToken?: string,
-    refreshToken?: string,
   ) => {
     const workspace =
       workspaces.find((item) => item.id === workspaceId) ||
       ({ id: workspaceId || 'default-workspace', name: 'My workspace', credits: 0 } satisfies Workspace);
-    persistSession(email, fullName, role, workspace, accessToken, refreshToken);
+    createSession(email, fullName, role, workspace);
   };
 
   const handleRegisterSuccess = (
@@ -119,33 +100,25 @@ export default function App() {
     fullName: string,
     workspaceName: string,
     role: string,
-    accessToken?: string,
-    refreshToken?: string,
   ) => {
-    persistSession(
-      email,
-      fullName,
-      role,
-      { id: 'default-workspace', name: workspaceName, credits: 0 },
-      accessToken,
-      refreshToken,
-    );
+    createSession(email, fullName, role, {
+      id: 'default-workspace',
+      name: workspaceName,
+      credits: 0,
+    });
   };
 
   const handleLogout = async () => {
-    if (session?.refreshToken) {
-      try {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken: session.refreshToken }),
-        });
-      } catch {
-        // Local logout must still complete when the server is unavailable.
-      }
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+    } catch {
+      // Local logout must still complete when the server is unavailable.
     }
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
     setSession(null);
   };
 
