@@ -84,18 +84,10 @@ export function buildCorsMiddleware(): RequestHandler {
 function disabledFeatureForRequest(originalUrl: string): string | null {
   const pathname = originalUrl.split("?", 1)[0];
 
-  if (!runtimeConfig.features.socialConnections && pathname.startsWith("/api/auth/meta")) {
-    return "socialConnections";
-  }
-  if (!runtimeConfig.features.publishing && pathname.startsWith("/api/publishing")) {
-    return "publishing";
-  }
-  if (!runtimeConfig.features.smartRepost && pathname.includes("smart-repost")) {
-    return "smartRepost";
-  }
-  if (!runtimeConfig.features.paidAds && (pathname.startsWith("/api/ads") || pathname.includes("dark-post"))) {
-    return "paidAds";
-  }
+  if (!runtimeConfig.features.socialConnections && pathname.startsWith("/api/auth/meta")) return "socialConnections";
+  if (!runtimeConfig.features.publishing && pathname.startsWith("/api/publishing")) return "publishing";
+  if (!runtimeConfig.features.smartRepost && pathname.includes("smart-repost")) return "smartRepost";
+  if (!runtimeConfig.features.paidAds && (pathname.startsWith("/api/ads") || pathname.includes("dark-post"))) return "paidAds";
   return null;
 }
 
@@ -107,15 +99,26 @@ const generalApiRateLimiter = rateLimit({
   message: { error: "Too many requests. Please slow down." },
 });
 
+const productImportRateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Too many product imports. Please wait before trying again.",
+    code: "PRODUCT_IMPORT_RATE_LIMITED",
+  },
+});
+
 /**
- * V1 policy gate plus the general API limiter. It is already mounted at `/api`
- * by server.ts, so disabled capabilities cannot be reached even if a legacy UI
- * or an old client still displays them.
+ * V1 policy gate plus API rate limits. This middleware is mounted at `/api`
+ * by server.ts, so policy is enforced even for legacy clients.
  */
 export const apiRateLimiter: RequestHandler = (req, res, next) => {
   const originalUrl = req.originalUrl || req.url;
+  const pathname = originalUrl.split("?", 1)[0];
 
-  if (req.method === "GET" && originalUrl.split("?", 1)[0] === "/api/features") {
+  if (req.method === "GET" && pathname === "/api/features") {
     return res.json({
       releaseVersion: runtimeConfig.releaseVersion,
       features: runtimeConfig.features,
@@ -130,6 +133,10 @@ export const apiRateLimiter: RequestHandler = (req, res, next) => {
       feature: disabledFeature,
       releaseVersion: runtimeConfig.releaseVersion,
     });
+  }
+
+  if (req.method === "POST" && pathname === "/api/import") {
+    return productImportRateLimiter(req, res, next);
   }
 
   return generalApiRateLimiter(req, res, next);

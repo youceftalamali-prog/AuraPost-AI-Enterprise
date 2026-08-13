@@ -1,3 +1,9 @@
+import { AppError } from "../core/errors/AppError.ts";
+import {
+  assertPublicProductUrl,
+  normalizeImportPrompt,
+  normalizeProductUrl,
+} from "../imports/productUrlPolicy.ts";
 import { IProductExtractor } from "./base.ts";
 import { ShopifyExtractor } from "./shopify.ts";
 import { WooCommerceExtractor } from "./woocommerce.ts";
@@ -6,47 +12,65 @@ import { AliExpressExtractor } from "./aliexpress.ts";
 import { AlibabaExtractor } from "./alibaba.ts";
 import { EBayExtractor } from "./ebay.ts";
 
+class PolicyEnforcedExtractor implements IProductExtractor {
+  public readonly providerName: string;
+
+  constructor(private readonly inner: IProductExtractor) {
+    this.providerName = inner.providerName;
+  }
+
+  public async extract(url: string, _rawHtml?: string, customPrompt?: string) {
+    const safeUrl = await assertPublicProductUrl(url);
+    const normalizedPrompt = normalizeImportPrompt(customPrompt);
+
+    // Browser-supplied HTML is deliberately ignored. Only the verified public URL
+    // may be fetched by the server-side extractor.
+    return this.inner.extract(safeUrl, undefined, normalizedPrompt);
+  }
+
+  public validate(product: Parameters<IProductExtractor["validate"]>[0]) {
+    return this.inner.validate(product);
+  }
+}
+
+function wrap(extractor: IProductExtractor): IProductExtractor {
+  return new PolicyEnforcedExtractor(extractor);
+}
+
 export class ExtractorFactory {
   public static getExtractor(url: string): IProductExtractor {
-    const lowerUrl = url.toLowerCase();
+    const parsed = new URL(normalizeProductUrl(url));
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    const query = parsed.search.toLowerCase();
 
-    // WooCommerce detection FIRST (higher priority) to prevent misclassification
     if (
-      lowerUrl.includes("woocommerce") ||
-      lowerUrl.includes("woo.") ||
-      lowerUrl.includes("wc-") ||
-      lowerUrl.includes("wp-json") ||
-      lowerUrl.includes("product_cat") ||
-      lowerUrl.includes("add-to-cart") ||
-      /\/product\/[^\/?#]+\/?(?:\?|$)/.test(lowerUrl) // /product/slug pattern
+      hostname.includes("woocommerce") ||
+      pathname.includes("/wp-json/") ||
+      query.includes("add-to-cart=") ||
+      /\/product\/[^/?#]+\/?$/.test(pathname)
     ) {
-      return new WooCommerceExtractor();
+      return wrap(new WooCommerceExtractor());
     }
 
-    // Shopify detection - only if clearly Shopify or uses Shopify product pattern (/products/slug)
     if (
-      lowerUrl.includes("shopify") ||
-      lowerUrl.includes("myshopify") ||
-      /\/products\/[^\/?#]+/.test(lowerUrl)
+      hostname.includes("shopify") ||
+      hostname.endsWith(".myshopify.com") ||
+      /\/products\/[^/?#]+/.test(pathname)
     ) {
-      return new ShopifyExtractor();
+      return wrap(new ShopifyExtractor());
     }
 
-    // Other platforms
-    if (lowerUrl.includes("amazon.") || lowerUrl.includes("amzn.")) {
-      return new AmazonExtractor();
+    if (hostname.includes("amazon.") || hostname === "amzn.to" || hostname.endsWith(".amzn.to")) {
+      return wrap(new AmazonExtractor());
     }
-    if (lowerUrl.includes("aliexpress.")) {
-      return new AliExpressExtractor();
-    }
-    if (lowerUrl.includes("alibaba.")) {
-      return new AlibabaExtractor();
-    }
-    if (lowerUrl.includes("ebay.")) {
-      return new EBayExtractor();
-    }
+    if (hostname.includes("aliexpress.")) return wrap(new AliExpressExtractor());
+    if (hostname.includes("alibaba.")) return wrap(new AlibabaExtractor());
+    if (hostname.includes("ebay.")) return wrap(new EBayExtractor());
 
-    // Default fallback: try WooCommerce first (since it's the most common)
-    return new WooCommerceExtractor();
+    throw new AppError("This store platform is not supported yet.", 422, {
+      code: "UNSUPPORTED_PRODUCT_PROVIDER",
+      hostname,
+    });
   }
 }
