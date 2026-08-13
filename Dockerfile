@@ -3,8 +3,11 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
+RUN npm ci --ignore-scripts
+
+# Run only the repository-owned compatibility patch required by the frontend build.
 COPY scripts ./scripts
-RUN npm ci
+RUN node scripts/fix-framer-motion.cjs
 
 COPY . .
 RUN npm run build
@@ -17,8 +20,7 @@ RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 appuser
 
 COPY package.json package-lock.json* ./
-COPY scripts ./scripts
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 
