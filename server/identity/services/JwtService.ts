@@ -1,6 +1,5 @@
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
-import crypto from "crypto";
 
 export interface TokenPayload {
   userId: string;
@@ -8,9 +7,21 @@ export interface TokenPayload {
   role: string;
 }
 
-// Process-wide globals to keep generated fallbacks consistent across multiple instances of JwtService
-let globalJwtSecret: string | null = null;
-let globalJwtRefreshSecret: string | null = null;
+const MINIMUM_SECRET_LENGTH = 32;
+
+function requireSecret(name: "JWT_SECRET" | "JWT_REFRESH_SECRET"): string {
+  const value = process.env[name]?.trim();
+
+  if (!value) {
+    throw new Error(`FATAL: ${name} is required. Refusing to generate process-local JWT secrets.`);
+  }
+
+  if (value.length < MINIMUM_SECRET_LENGTH) {
+    throw new Error(`FATAL: ${name} must contain at least ${MINIMUM_SECRET_LENGTH} characters.`);
+  }
+
+  return value;
+}
 
 export class JwtService {
   private readonly jwtSecret: string;
@@ -19,27 +30,17 @@ export class JwtService {
   private readonly refreshTokenExpiry: any;
 
   constructor() {
-    // SECURITY FIX (Phase 1 — Critical Issue #6): hardcoded default secrets removed.
-    // Booting with a publicly-known secret allows anyone to forge valid access/refresh
-    // tokens. We now fallback to high-entropy random secrets if they are not provided in env,
-    // which prevents startup crashes on Cloud Run while remaining extremely secure.
-    if (!globalJwtSecret) {
-      globalJwtSecret = process.env.JWT_SECRET || crypto.randomBytes(48).toString("hex");
-    }
-    if (!globalJwtRefreshSecret) {
-      globalJwtRefreshSecret = process.env.JWT_REFRESH_SECRET || crypto.randomBytes(48).toString("hex");
-    }
-
-    const secret = globalJwtSecret;
-    const refreshSecret = globalJwtRefreshSecret;
+    const secret = requireSecret("JWT_SECRET");
+    const refreshSecret = requireSecret("JWT_REFRESH_SECRET");
 
     if (secret === refreshSecret) {
       throw new Error("FATAL: JWT_SECRET and JWT_REFRESH_SECRET must not be identical.");
     }
+
     this.jwtSecret = secret;
     this.jwtRefreshSecret = refreshSecret;
-    this.accessTokenExpiry = process.env.JWT_ACCESS_EXPIRY || "15m"; // 15 minutes
-    this.refreshTokenExpiry = process.env.JWT_REFRESH_EXPIRY || "7d"; // 7 days
+    this.accessTokenExpiry = process.env.JWT_ACCESS_EXPIRY || "15m";
+    this.refreshTokenExpiry = process.env.JWT_REFRESH_EXPIRY || "7d";
   }
 
   public generateAccessToken(payload: TokenPayload): string {
@@ -49,16 +50,6 @@ export class JwtService {
     });
   }
 
-  /**
-   * BUG FIX (found via live PostgreSQL boot testing, POSTGRESQL_CUTOVER_REPORT.md):
-   * jwt.sign() is deterministic for an identical payload + identical secret +
-   * identical `iat`/`exp` (both derived from the current second). Two calls to
-   * generateRefreshToken() with the same {userId, email, role} within the same
-   * wall-clock second (e.g. login immediately followed by /api/auth/refresh)
-   * previously produced a byte-for-byte identical token string, which then
-   * violated refresh_tokens.token's UNIQUE constraint on insert. A random jti
-   * (JWT ID) claim guarantees uniqueness regardless of timing.
-   */
   public generateRefreshToken(payload: TokenPayload): string {
     return jwt.sign(payload, this.jwtRefreshSecret, {
       expiresIn: this.refreshTokenExpiry,
@@ -69,7 +60,7 @@ export class JwtService {
   public verifyAccessToken(token: string): TokenPayload {
     try {
       return jwt.verify(token, this.jwtSecret) as TokenPayload;
-    } catch (error) {
+    } catch {
       throw new Error("Invalid or expired access token");
     }
   }
@@ -77,7 +68,7 @@ export class JwtService {
   public verifyRefreshToken(token: string): TokenPayload {
     try {
       return jwt.verify(token, this.jwtRefreshSecret) as TokenPayload;
-    } catch (error) {
+    } catch {
       throw new Error("Invalid or expired refresh token");
     }
   }
