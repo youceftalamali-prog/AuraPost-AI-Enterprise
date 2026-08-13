@@ -2,22 +2,9 @@ import helmet from "helmet";
 import cors from "cors";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { RequestHandler } from "express";
-
-/**
- * PHASE 1 SECURITY HARDENING
- *
- * This app is a pure Bearer-token JSON API (no cookie-based sessions were found
- * anywhere in the codebase), so CSRF in the classic sense does not apply here -
- * browsers do not automatically attach `Authorization` headers cross-site the
- * way they do cookies. The relevant browser-facing risks are XSS (mitigated via
- * CSP/secure headers below) and origin restriction (mitigated via CORS below).
- */
+import { runtimeConfig } from "../config/environment.ts";
 
 export function buildHelmetMiddleware(): RequestHandler {
-  // In development, Vite's @vitejs/plugin-react injects an inline <script> containing the
-  // React Refresh runtime preamble. CSP script-src 'self' blocks all inline scripts, causing
-  // the "can't detect preamble" error. Production builds emit only non-inline <script src="...">
-  // bundles, so CSP remains fully enforced there.
   if (process.env.NODE_ENV !== "production") {
     return (_req, _res, next) => next();
   }
@@ -42,101 +29,120 @@ export function buildHelmetMiddleware(): RequestHandler {
 export function buildCorsMiddleware(): RequestHandler {
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
-    .map((o) => o.trim())
+    .map((origin) => origin.trim())
     .filter(Boolean);
 
   return (req, res, next) => {
-    // Only apply CORS restrictions to API and Webhook paths.
-    // Static assets, HTML, and other page resources do not require CORS validation.
     if (!req.path.startsWith("/api") && !req.path.startsWith("/shopify")) {
       return next();
     }
 
     const origin = req.header("Origin");
-    const host = req.header("Host") || req.get("host") || "";
-
-    // 1. Allow same-origin/non-browser requests (no Origin header, e.g. server-to-server, curl).
     if (!origin) {
       return cors({ credentials: true })(req, res, next);
     }
 
-    // 2. Explicitly allow same-origin requests even when ALLOWED_ORIGINS is empty.
-    // Account for proxies (like Cloud Run) which might rewrite the Host header while
-    // preserving the public domain in X-Forwarded-Host.
     let isSameOrigin = false;
     try {
       const originUrl = new URL(origin);
       const originHost = originUrl.host.toLowerCase();
       const originHostname = originUrl.hostname.toLowerCase();
-
-      const reqHost = (req.header("Host") || req.get("host") || "").toLowerCase();
+      const requestHost = (req.header("Host") || req.get("host") || "").toLowerCase();
       const forwardedHost = (req.get("x-forwarded-host") || "").toLowerCase();
 
       if (
-        originHost === reqHost ||
+        originHost === requestHost ||
         originHost === forwardedHost ||
-        originHostname === reqHost.split(":")[0] ||
+        originHostname === requestHost.split(":")[0] ||
         originHostname === forwardedHost.split(":")[0] ||
-        originHostname === "localhost" ||
-        originHostname === "127.0.0.1"
+        (process.env.NODE_ENV !== "production" &&
+          (originHostname === "localhost" || originHostname === "127.0.0.1"))
       ) {
         isSameOrigin = true;
       }
-    } catch (e) {
-      // Ignore URL parsing errors
+    } catch {
+      // Invalid origins are rejected below.
     }
 
-    if (isSameOrigin) {
+    if (isSameOrigin || allowedOrigins.includes(origin)) {
       return cors({
-        origin: origin,
+        origin,
         credentials: true,
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization"],
+        allowedHeaders: ["Content-Type", "Authorization", "X-Request-Id"],
       })(req, res, next);
     }
 
-    // 3. No allowlist configured: default to same-origin-only behavior by rejecting
-    // cross-origin browser requests rather than silently allowing "*".
     if (allowedOrigins.length === 0) {
-      const err = new Error("CORS: ALLOWED_ORIGINS is not configured; cross-origin requests are rejected by default.");
-      return next(err);
+      return next(new Error("CORS: ALLOWED_ORIGINS is not configured; cross-origin requests are rejected."));
     }
 
-    // 4. Check if the origin matches the allowed list
-    if (allowedOrigins.includes(origin)) {
-      return cors({
-        origin: origin,
-        credentials: true,
-        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization"],
-      })(req, res, next);
-    }
-
-    // 5. Reject otherwise
-    const err = new Error(`CORS: origin '${origin}' is not in the ALLOWED_ORIGINS allowlist.`);
-    return next(err);
+    return next(new Error(`CORS: origin '${origin}' is not in the ALLOWED_ORIGINS allowlist.`));
   };
 }
 
-/** Strict limiter for authentication endpoints (brute-force / credential-stuffing protection). */
-export const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many authentication attempts. Please try again in 15 minutes." },
-});
+function disabledFeatureForRequest(originalUrl: string): string | null {
+  const pathname = originalUrl.split("?", 1)[0];
 
-/** General API limiter, generous enough for normal SaaS usage patterns. */
-export const apiRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
+  if (!runtimeConfig.features.socialConnections && pathname.startsWith("/api/auth/meta")) {
+    return "socialConnections";
+  }
+  if (!runtimeConfig.features.publishing && pathname.startsWith("/api/publishing")) {
+    return "publishing";
+  }
+  if (!runtimeConfig.features.smartRepost && pathname.includes("smart-repost")) {
+    return "smartRepost";
+  }
+  if (!runtimeConfig.features.paidAds && (pathname.startsWith("/api/ads") || pathname.includes("dark-post"))) {
+    return "paidAds";
+  }
+  return null;
+}
+
+const generalApiRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
   limit: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests. Please slow down." },
 });
 
-/** Tighter limiter for expensive AI-generation endpoints, to bound cost exposure per caller. */
+/**
+ * V1 policy gate plus the general API limiter. It is already mounted at `/api`
+ * by server.ts, so disabled capabilities cannot be reached even if a legacy UI
+ * or an old client still displays them.
+ */
+export const apiRateLimiter: RequestHandler = (req, res, next) => {
+  const originalUrl = req.originalUrl || req.url;
+
+  if (req.method === "GET" && originalUrl.split("?", 1)[0] === "/api/features") {
+    return res.json({
+      releaseVersion: runtimeConfig.releaseVersion,
+      features: runtimeConfig.features,
+    });
+  }
+
+  const disabledFeature = disabledFeatureForRequest(originalUrl);
+  if (disabledFeature) {
+    return res.status(404).json({
+      error: "Feature not available in this release.",
+      code: "FEATURE_DISABLED",
+      feature: disabledFeature,
+      releaseVersion: runtimeConfig.releaseVersion,
+    });
+  }
+
+  return generalApiRateLimiter(req, res, next);
+};
+
+export const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many authentication attempts. Please try again in 15 minutes." },
+});
+
 export const aiGenerationRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 20,
@@ -146,7 +152,6 @@ export const aiGenerationRateLimiter = rateLimit({
   keyGenerator: (req: any) => req.user?.userId || ipKeyGenerator(req.ip),
 });
 
-/** Webhook-specific limiter (Shopify/Stripe can legitimately burst, so this is generous). */
 export const webhookRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 120,

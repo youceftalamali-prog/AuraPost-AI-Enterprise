@@ -25,6 +25,25 @@ test("PayPal never fabricates successful orders or captures", async () => {
   assert.doesNotMatch(paypalSource, /publishing-100/);
 });
 
+test("production configuration validates secrets, test modes, and V1 policy", async () => {
+  const environmentSource = await source("server/core/config/environment.ts");
+  assert.match(environmentSource, /validateEnvironment\(\)/);
+  assert.match(environmentSource, /JWT_REFRESH_SECRET/);
+  assert.match(environmentSource, /ENCRYPTION_MASTER_KEY/);
+  assert.match(environmentSource, /AURAPOST_ENABLE_TEST_DATASET/);
+  assert.match(environmentSource, /AuraPost V1 licensing policy/);
+  assert.match(environmentSource, /must contain at least 32 characters/);
+});
+
+test("disabled V1 APIs are blocked before legacy route handlers", async () => {
+  const securitySource = await source("server/core/middleware/SecurityMiddleware.ts");
+  assert.match(securitySource, /runtimeConfig\.features\.publishing/);
+  assert.match(securitySource, /pathname\.startsWith\("\/api\/publishing"\)/);
+  assert.match(securitySource, /pathname\.startsWith\("\/api\/auth\/meta"\)/);
+  assert.match(securitySource, /FEATURE_DISABLED/);
+  assert.match(securitySource, /"\/api\/features"/);
+});
+
 test("deployment files keep the Phase Zero safety controls", async () => {
   const [dockerfile, compose, envExample] = await Promise.all([
     source("Dockerfile"),
