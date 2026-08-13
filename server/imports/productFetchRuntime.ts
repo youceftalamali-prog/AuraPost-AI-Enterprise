@@ -201,7 +201,10 @@ async function safeProductFetch(
     responseHeaders.set("x-aurapost-final-url", currentUrl);
     if (body) responseHeaders.set("content-length", String(body.byteLength));
 
-    return new Response(body, {
+    const responseBody: BodyInit | null = body
+      ? (body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer)
+      : null;
+    return new Response(responseBody, {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
@@ -221,7 +224,11 @@ function installRuntimeGuard(state: RuntimeState): void {
     return safeProductFetch(state.nativeFetch, input, init);
   };
 
-  globalThis.fetch = guardedFetch;
+  Object.defineProperty(globalThis, "fetch", {
+    value: guardedFetch,
+    writable: true,
+    configurable: true,
+  });
   state.installed = true;
 }
 
