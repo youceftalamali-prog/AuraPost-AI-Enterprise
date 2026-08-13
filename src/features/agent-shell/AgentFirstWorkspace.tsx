@@ -52,10 +52,8 @@ const toolLabels: Record<AgentToolId, Record<AgentLocale, string>> = {
   settings: { ar: 'الإعدادات', fr: 'Paramètres', en: 'Settings' },
 };
 
-function getInitialLocale(): AgentLocale {
-  const saved = localStorage.getItem('aurapost_locale');
-  if (saved === 'ar' || saved === 'fr' || saved === 'en') return saved;
-  return 'ar';
+function isAgentLocale(value: string): value is AgentLocale {
+  return value === 'ar' || value === 'fr' || value === 'en';
 }
 
 export function AgentFirstWorkspace({
@@ -64,7 +62,7 @@ export function AgentFirstWorkspace({
   onLogout,
   onAddAuditLog,
 }: AgentFirstWorkspaceProps) {
-  const [locale, setLocale] = useState<AgentLocale>(getInitialLocale);
+  const [locale, setLocale] = useState<AgentLocale>('ar');
   const [activeTool, setActiveTool] = useState<AgentToolId | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<AgentTemplate | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | undefined>();
@@ -90,7 +88,6 @@ export function AgentFirstWorkspace({
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('aurapost_locale', locale);
     document.documentElement.lang = locale;
     document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr';
     return () => {
@@ -232,7 +229,10 @@ export function AgentFirstWorkspace({
               <select
                 aria-label="Interface language"
                 value={locale}
-                onChange={(event) => setLocale(event.target.value as AgentLocale)}
+                onChange={(event) => {
+                  const nextLocale = event.target.value;
+                  if (isAgentLocale(nextLocale)) setLocale(nextLocale);
+                }}
                 className="appearance-none bg-transparent pr-4 outline-none"
               >
                 <option className="bg-slate-950" value="ar">العربية</option>
