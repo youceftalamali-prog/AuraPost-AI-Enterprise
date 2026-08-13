@@ -1,13 +1,9 @@
 import type { Request, Response } from 'express';
 
-const ACCESS_COOKIE_NAME = 'aurapost_access_token';
-const REFRESH_COOKIE_NAME = 'aurapost_refresh_token';
+const ACCESS_COOKIE_NAME = '__Secure-aurapost_access_token';
+const REFRESH_COOKIE_NAME = '__Secure-aurapost_refresh_token';
 const ACCESS_COOKIE_PATH = '/api';
 const REFRESH_COOKIE_PATH = '/api/auth';
-
-function isProduction(): boolean {
-  return process.env.NODE_ENV === 'production';
-}
 
 function readCookie(req: Request, name: string): string | null {
   const header = req.headers.cookie;
@@ -45,18 +41,16 @@ export function setAuthCookies(
   accessToken: string,
   refreshToken: string,
 ): void {
-  const secure = isProduction();
-
   res.cookie(ACCESS_COOKIE_NAME, accessToken, {
     httpOnly: true,
-    secure,
+    secure: true,
     sameSite: 'strict',
     path: ACCESS_COOKIE_PATH,
     maxAge: 15 * 60 * 1000,
   });
   res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
     httpOnly: true,
-    secure,
+    secure: true,
     sameSite: 'strict',
     path: REFRESH_COOKIE_PATH,
     maxAge: 7 * 24 * 60 * 60 * 1000,
@@ -65,8 +59,11 @@ export function setAuthCookies(
 }
 
 export function clearAuthCookies(res: Response): void {
-  const secure = isProduction();
-  const common = { httpOnly: true, secure, sameSite: 'strict' as const };
+  const common = {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict' as const,
+  };
 
   res.clearCookie(ACCESS_COOKIE_NAME, {
     ...common,
