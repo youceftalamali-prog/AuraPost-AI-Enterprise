@@ -42,12 +42,15 @@ export interface RuntimeConfig {
   features: RuntimeFeatureFlags;
 }
 
+const nodeEnv = process.env.NODE_ENV || "development";
+const developmentUrl = nodeEnv === "production" ? "" : "http://localhost:3000";
+
 export const runtimeConfig: RuntimeConfig = Object.freeze({
-  nodeEnv: process.env.NODE_ENV || "development",
+  nodeEnv,
   releaseVersion: process.env.AURAPOST_RELEASE_VERSION || "v1",
   port: readPort(),
-  appUrl: process.env.APP_URL || "http://localhost:3000",
-  appBaseUrl: process.env.APP_BASE_URL || process.env.APP_URL || "http://localhost:3000",
+  appUrl: process.env.APP_URL || developmentUrl,
+  appBaseUrl: process.env.APP_BASE_URL || process.env.APP_URL || developmentUrl,
   databaseUrl: process.env.DATABASE_URL || "",
   jwtSecret: process.env.JWT_SECRET || "",
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || "",
@@ -108,7 +111,6 @@ export function validateEnvironment(config: RuntimeConfig = runtimeConfig): void
   }
 }
 
-// Backward-compatible export for modules that still consume the legacy shape.
 export const env = {
   NODE_ENV: runtimeConfig.nodeEnv,
   PORT: runtimeConfig.port,
