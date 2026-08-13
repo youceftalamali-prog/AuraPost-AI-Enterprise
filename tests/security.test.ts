@@ -36,10 +36,13 @@ test("credit mutation test route is unavailable when TEST_MODE is false", async 
   assert.equal((await post("/api/set-credits", { workspaceId: "test", amount: 999999 })).status, 404);
 });
 
-test("login errors do not expose internal fields", async () => {
+test("login errors do not expose internal fields or authentication cookies", async () => {
   const response = await post("/api/auth/login", { email: "", password: "" });
   assert.ok([400, 401, 422].includes(response.status));
   const serialized = JSON.stringify(response.body).toLowerCase();
   assert.equal(serialized.includes("stack"), false);
   assert.equal(serialized.includes("password_hash"), false);
+  assert.equal(serialized.includes("accesstoken"), false);
+  assert.equal(serialized.includes("refreshtoken"), false);
+  assert.equal(response.headers["set-cookie"], undefined);
 });

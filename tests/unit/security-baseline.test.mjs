@@ -16,6 +16,29 @@ test("JWT configuration fails closed instead of generating local secrets", async
   assert.doesNotMatch(jwtSource, /globalJwtSecret/);
 });
 
+test("browser authentication uses hardened cookies and never Web Storage", async () => {
+  const [cookieSource, routeSource, appSource, clientSource, shellSource] = await Promise.all([
+    source("server/identity/http/authCookies.ts"),
+    source("server/identity/routes/auth.routes.ts"),
+    source("src/App.tsx"),
+    source("src/core/api/client.ts"),
+    source("src/features/agent-shell/AgentFirstWorkspace.tsx"),
+  ]);
+
+  assert.match(cookieSource, /__Secure-aurapost_access_token/);
+  assert.match(cookieSource, /__Secure-aurapost_refresh_token/);
+  assert.match(cookieSource, /httpOnly:\s*true/);
+  assert.match(cookieSource, /secure:\s*true/);
+  assert.match(cookieSource, /sameSite:\s*['"]strict['"]/);
+  assert.match(routeSource, /setAuthCookies\(res, result\.accessToken, result\.refreshToken\)/);
+  assert.doesNotMatch(routeSource, /accessToken:\s*result\.accessToken/);
+  assert.doesNotMatch(routeSource, /refreshToken:\s*result\.refreshToken/);
+
+  const frontendAuthSource = `${appSource}\n${clientSource}\n${shellSource}`;
+  assert.doesNotMatch(frontendAuthSource, /aurapost_(?:access|refresh)_token/);
+  assert.doesNotMatch(frontendAuthSource, /localStorage/);
+});
+
 test("PayPal never fabricates successful orders or captures", async () => {
   const paypalSource = await source("server/billing/paypal.ts");
   assert.match(paypalSource, /fabricated payment success is disabled/);
