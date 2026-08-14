@@ -8,6 +8,7 @@ export type AgentWorkflowStep =
   | 'market_analysis'
   | 'content_generation'
   | 'creative_direction'
+  | 'production_blueprint'
   | 'video_generation'
   | 'campaign_export'
   | 'completed';

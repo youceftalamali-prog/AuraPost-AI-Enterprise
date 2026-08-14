@@ -14,6 +14,7 @@ export type AgentToolId =
   | 'campaign_brief'
   | 'content_package'
   | 'creative_direction'
+  | 'production_blueprint'
   | 'campaign_export'
   | 'video'
   | 'content_studio'
