@@ -25,7 +25,7 @@ function refs(value:unknown,field:string,valid:Set<string>):string[]{if(!Array.i
 function strings(value:unknown,field:string,min:number,max:number,itemMax=800):string[]{return array(value,field,min,max).map((item,index)=>text(item,`${field}[${index}]`,itemMax));}
 
 const riskyClaims:Array<{pattern:RegExp;label:string}>=[
- {pattern:/\b\d+(?:\.\d+)?%\b/g,label:'percentage'},
+ {pattern:/\d+(?:\.\d+)?%/g,label:'percentage'},
  {pattern:/\b(?:#\s?1|best[- ]selling|guaranteed|clinically proven|certified|limited stock|free shipping)\b/gi,label:'unsupported commercial claim'},
 ];
 function allStrings(value:unknown,result:string[]=[]):string[]{if(typeof value==='string')result.push(value);else if(Array.isArray(value))value.forEach((item)=>allStrings(item,result));else if(isRecord(value))Object.values(value).forEach((item)=>allStrings(item,result));return result;}
