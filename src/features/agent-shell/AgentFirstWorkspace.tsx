@@ -12,6 +12,7 @@ const ProductImport = React.lazy(() => import('../../components/ProductImport'))
 const ProductAnalyzer = React.lazy(() => import('../../components/ProductAnalyzer'));
 const CampaignBriefEditor = React.lazy(() => import('./CampaignBriefEditor'));
 const CampaignContentPackageView = React.lazy(() => import('./CampaignContentPackageView'));
+const CreativeDirectionView = React.lazy(() => import('./CreativeDirectionView'));
 const ImageStudio = React.lazy(() => import('../../components/ImageStudio'));
 const VideoStudio = React.lazy(() => import('../../video-studio/components/VideoStudio/StudioShell').then((module) => ({ default: module.StudioShell })));
 const SettingsModule = React.lazy(() => import('../../components/SettingsModule'));
@@ -19,12 +20,12 @@ const SettingsModule = React.lazy(() => import('../../components/SettingsModule'
 interface AgentFirstWorkspaceProps { session: Session; testMode: boolean; onLogout: () => void | Promise<void>; onAddAuditLog: (action: string, details: string) => void }
 const toolLabels: Record<AgentToolId, Record<AgentLocale, string>> = {
   catalog:{ar:'اختيار المنتج',fr:'Choisir le produit',en:'Choose product'}, import:{ar:'استيراد المنتج',fr:'Importer le produit',en:'Import product'},
-  analyzer:{ar:'تحليل المنتج والأسواق',fr:'Analyser le produit',en:'Analyze product'}, campaign_brief:{ar:'موجز الحملة الذكي',fr:'Brief de campagne',en:'Campaign brief'}, content_package:{ar:'حزمة محتوى الحملة',fr:'Pack de contenu',en:'Content package'},
+  analyzer:{ar:'تحليل المنتج والأسواق',fr:'Analyser le produit',en:'Analyze product'}, campaign_brief:{ar:'موجز الحملة الذكي',fr:'Brief de campagne',en:'Campaign brief'}, content_package:{ar:'حزمة محتوى الحملة',fr:'Pack de contenu',en:'Content package'}, creative_direction:{ar:'التوجيه الإبداعي',fr:'Direction créative',en:'Creative direction'},
   video:{ar:'إنشاء الفيديو',fr:'Créer la vidéo',en:'Create video'}, content_studio:{ar:'إنشاء المحتوى',fr:'Créer le contenu',en:'Create content'},
   image_studio:{ar:'إنشاء الصورة',fr:"Créer l’image",en:'Create image'}, settings:{ar:'الإعدادات',fr:'Paramètres',en:'Settings'},
 };
 const stepToTool: Partial<Record<AgentWorkflowStep, AgentToolId>> = {
-  import_product:'import',select_product:'catalog',prepare_assets:'image_studio',campaign_brief:'campaign_brief',market_analysis:'analyzer',content_generation:'content_package',creative_direction:'image_studio',video_generation:'video',campaign_export:'content_package',
+  import_product:'import',select_product:'catalog',prepare_assets:'image_studio',campaign_brief:'campaign_brief',market_analysis:'analyzer',content_generation:'content_package',creative_direction:'creative_direction',video_generation:'video',campaign_export:'creative_direction',
 };
 function isAgentLocale(value:string):value is AgentLocale{return value==='ar'||value==='fr'||value==='en';}
 
@@ -45,7 +46,8 @@ export function AgentFirstWorkspace({session,testMode,onLogout,onAddAuditLog}:Ag
   case 'import':return <ProductImport workspaceId={workspaceId} onAddAuditLog={onAddAuditLog} onImportSuccess={(productId)=>{setSelectedProductId(productId);void moveWorkflow('catalog','select_product','Aura imported the product and opened it for review.',{productId});}}/>;
   case 'analyzer':return <ProductAnalyzer workspaceId={workspaceId} selectedProductIdFromCatalog={selectedProductId} onAddAuditLog={onAddAuditLog}/>;
   case 'campaign_brief':return <CampaignBriefEditor locale={locale} workflow={activeWorkflow} onAddAuditLog={onAddAuditLog} onApproved={()=>{void moveWorkflow('content_package','content_generation','Aura approved the campaign brief and opened the content package.');}}/>;
-  case 'content_package':return <CampaignContentPackageView locale={locale} workflow={activeWorkflow} onAddAuditLog={onAddAuditLog}/>;
+  case 'content_package':return <CampaignContentPackageView locale={locale} workflow={activeWorkflow} onAddAuditLog={onAddAuditLog} onContinue={()=>{void moveWorkflow('creative_direction','creative_direction','Aura opened Creative Direction from the Campaign Content Package.');}}/>;
+  case 'creative_direction':return <CreativeDirectionView locale={locale} workflow={activeWorkflow} onAddAuditLog={onAddAuditLog}/>;
   case 'image_studio':return <ImageStudio workspaceId={workspaceId} onAddAuditLog={onAddAuditLog} selectedProductIdFromCatalog={selectedProductId} initialActiveTab="graphics" testMode={testMode}/>;
   case 'content_studio':return <ImageStudio workspaceId={workspaceId} onAddAuditLog={onAddAuditLog} selectedProductIdFromCatalog={selectedProductId} initialActiveTab="copy" testMode={testMode}/>;
   case 'video':return <VideoStudio/>;case 'settings':return <SettingsModule/>;default:return null;
