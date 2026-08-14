@@ -17,6 +17,14 @@ import {
   type FeatureManifest,
 } from '../../core/api/featureManifest';
 import { AgentHome } from './AgentHome';
+import {
+  createAgentWorkflow,
+  loadActiveAgentWorkflow,
+  patchAgentWorkflow,
+  type AgentWorkflow,
+  type AgentWorkflowPatch,
+  type AgentWorkflowStep,
+} from './agentWorkflowApi';
 import type {
   AgentLocale,
   AgentSourceMode,
@@ -52,6 +60,18 @@ const toolLabels: Record<AgentToolId, Record<AgentLocale, string>> = {
   settings: { ar: 'الإعدادات', fr: 'Paramètres', en: 'Settings' },
 };
 
+const stepToTool: Partial<Record<AgentWorkflowStep, AgentToolId>> = {
+  import_product: 'import',
+  select_product: 'catalog',
+  prepare_assets: 'image_studio',
+  campaign_brief: 'content_studio',
+  market_analysis: 'analyzer',
+  content_generation: 'content_studio',
+  creative_direction: 'image_studio',
+  video_generation: 'video',
+  campaign_export: 'content_studio',
+};
+
 function isAgentLocale(value: string): value is AgentLocale {
   return value === 'ar' || value === 'fr' || value === 'en';
 }
@@ -66,6 +86,8 @@ export function AgentFirstWorkspace({
   const [activeTool, setActiveTool] = useState<AgentToolId | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<AgentTemplate | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | undefined>();
+  const [activeWorkflow, setActiveWorkflow] = useState<AgentWorkflow | null>(null);
+  const [workflowWarning, setWorkflowWarning] = useState(false);
   const [manifest, setManifest] = useState<FeatureManifest>(V1_FEATURE_FALLBACK);
   const [manifestWarning, setManifestWarning] = useState(false);
 
@@ -86,6 +108,25 @@ export function AgentFirstWorkspace({
       });
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadActiveAgentWorkflow(controller.signal)
+      .then((workflow) => {
+        if (!workflow) return;
+        setActiveWorkflow(workflow);
+        setLocale(workflow.locale);
+        setSelectedProductId(workflow.productId || undefined);
+        const resumeTool = stepToTool[workflow.currentStep];
+        if (resumeTool && workflow.status === 'active') setActiveTool(resumeTool);
+        setWorkflowWarning(false);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setWorkflowWarning(true);
+      });
+    return () => controller.abort();
+  }, [workspaceId]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -111,13 +152,39 @@ export function AgentFirstWorkspace({
     [manifest],
   );
 
-  const openTool = (tool: AgentToolId, reason: string) => {
-    setActiveTool(tool);
-    onAddAuditLog('agent.workflow_opened', reason);
+  const persistPatch = async (patch: AgentWorkflowPatch) => {
+    if (!activeWorkflow) return;
+    try {
+      const updated = await patchAgentWorkflow(activeWorkflow, patch);
+      setActiveWorkflow(updated);
+      setWorkflowWarning(false);
+    } catch {
+      setWorkflowWarning(true);
+    }
   };
 
-  const handleStart = (mode: AgentSourceMode, prompt: string) => {
+  const openTool = (tool: AgentToolId, reason: string, step?: AgentWorkflowStep) => {
+    setActiveTool(tool);
+    onAddAuditLog('agent.workflow_opened', reason);
+    if (step) void persistPatch({ currentStep: step });
+  };
+
+  const handleStart = async (mode: AgentSourceMode, prompt: string) => {
     const promptContext = prompt ? ` Prompt: ${prompt}` : '';
+    try {
+      const workflow = await createAgentWorkflow({
+        sourceMode: mode,
+        locale,
+        prompt,
+        templateId: selectedTemplate?.id,
+        productId: mode === 'saved_product' ? selectedProductId : undefined,
+      });
+      setActiveWorkflow(workflow);
+      setWorkflowWarning(false);
+    } catch {
+      setWorkflowWarning(true);
+    }
+
     if (mode === 'url') {
       openTool('import', `Aura requested a product URL.${promptContext}`);
       return;
@@ -148,10 +215,12 @@ export function AgentFirstWorkspace({
             initialSelectedProductId={selectedProductId}
             onSelectProductForAnalysis={(productId) => {
               setSelectedProductId(productId);
+              void persistPatch({ productId, currentStep: 'market_analysis' });
               openTool('analyzer', 'Aura moved the selected product to market analysis.');
             }}
             onSelectProductForStudio={(productId) => {
               setSelectedProductId(productId);
+              void persistPatch({ productId, currentStep: 'content_generation' });
               openTool('content_studio', 'Aura moved the selected product to content creation.');
             }}
             onAddAuditLog={onAddAuditLog}
@@ -164,6 +233,7 @@ export function AgentFirstWorkspace({
             onAddAuditLog={onAddAuditLog}
             onImportSuccess={(productId) => {
               setSelectedProductId(productId);
+              void persistPatch({ productId, currentStep: 'select_product' });
               openTool('catalog', 'Aura imported the product and opened it for review.');
             }}
           />
@@ -231,7 +301,10 @@ export function AgentFirstWorkspace({
                 value={locale}
                 onChange={(event) => {
                   const nextLocale = event.target.value;
-                  if (isAgentLocale(nextLocale)) setLocale(nextLocale);
+                  if (isAgentLocale(nextLocale)) {
+                    setLocale(nextLocale);
+                    void persistPatch({ locale: nextLocale });
+                  }
                 }}
                 className="appearance-none bg-transparent pr-4 outline-none"
               >
@@ -262,6 +335,11 @@ export function AgentFirstWorkspace({
             Feature policy could not be refreshed. AuraPost is using the safe V1 fallback with publishing disabled.
           </div>
         )}
+        {workflowWarning && (
+          <div className="mb-5 rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-xs text-amber-100">
+            Aura could not persist the latest workflow update. No generation or paid action was started automatically.
+          </div>
+        )}
 
         {!activeTool ? (
           <>
@@ -272,7 +350,7 @@ export function AgentFirstWorkspace({
               </div>
               <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-slate-400 sm:flex">
                 <Bot className="h-4 w-4 text-emerald-300" />
-                Aura controls the V1 workflow
+                {activeWorkflow ? `Aura workflow · v${activeWorkflow.version}` : 'Aura controls the V1 workflow'}
               </div>
             </div>
             <AgentHome
@@ -294,11 +372,18 @@ export function AgentFirstWorkspace({
                   <h1 className="font-semibold text-white">{activeLabel}</h1>
                 </div>
               </div>
-              {selectedTemplate && (
-                <span className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200">
-                  {selectedTemplate.category} · {selectedTemplate.title}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {activeWorkflow && (
+                  <span className="rounded-lg border border-indigo-400/20 bg-indigo-400/10 px-3 py-2 text-xs text-indigo-200">
+                    {activeWorkflow.currentStep} · v{activeWorkflow.version}
+                  </span>
+                )}
+                {selectedTemplate && (
+                  <span className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200">
+                    {selectedTemplate.category} · {selectedTemplate.title}
+                  </span>
+                )}
+              </div>
             </div>
 
             <ErrorBoundary key={activeTool}>
