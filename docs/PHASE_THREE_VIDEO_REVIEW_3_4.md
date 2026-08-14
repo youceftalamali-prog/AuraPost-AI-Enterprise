@@ -1,19 +1,16 @@
 # Phase 3.4 — Video Review & Scene Regeneration
 
-## Review, revision and approval pipeline
+## Aura review interface
 
-- Reviews are persisted with optimistic versions and workspace/user isolation.
-- Frame-bounded annotations can be resolved without mutating historical video files.
-- Caption-only and visual scene revisions create private immutable MP4 versions while preserving target dimensions, duration, scene order and product integrity.
-- Approval requires every annotation to be resolved and every requested revision to have a successful execution job.
-- Approved reviews are immutable.
-- The version timeline returns original and revised videos through 15-minute signed URLs.
-- The latest successful version per target is marked current, while every original remains available for rollback.
-- Storage keys are never returned.
+Phase 3.4.5 connects the complete review pipeline to Aura in Arabic, French and English.
+
+- Review creation appears after a render batch completes.
+- Target and scene selectors are populated from the approved Production Blueprint.
+- Users can add frame-safe visual, caption, timing and compliance annotations.
+- Aura can request visual or caption revisions against the correct successful render job.
+- Selective revision execution displays stable status, credit outcomes and errors.
+- Original and revised private videos appear in an immutable version timeline.
+- Annotations can be resolved from the review panel.
+- Campaign Export remains locked until the review is approved.
+- Approval requires all annotations resolved and all requested revisions successfully executed.
 - Publishing, scheduling, Smart Repost and paid ads remain disabled.
-
-## Approval and version API
-
-- `PATCH /api/agent/workflows/:workflowId/video-reviews/:reviewId/annotations/:annotationId`
-- `POST /api/agent/workflows/:workflowId/video-reviews/:reviewId/approve`
-- `GET /api/agent/workflows/:workflowId/video-reviews/:reviewId/versions`
