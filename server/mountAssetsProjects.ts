@@ -5,6 +5,7 @@ import type { Pool } from 'pg';
 import { initAssetsProjectsDb } from './database/index';
 import assetRoutes from './assets/routes/index';
 import projectRoutes from './projects/routes/index';
+import { createAuraAgentRouter } from './agent/mount';
 
 export interface AssetsProjectsAuthMiddleware {
   requireAuthAndWorkspace: () => Array<(req: any, res: any, next: any) => any>;
@@ -12,16 +13,9 @@ export interface AssetsProjectsAuthMiddleware {
 }
 
 /**
- * Wires the Assets and Projects modules (ported from Image Studio) into
- * AuraPost's existing Express app — mirrors server/video-studio/mount.ts:
- *
- * - Reuses AuraPost's existing pg Pool (initAssetsProjectsDb), no second
- *   connection.
- * - Reuses AuraPost's existing JWT/workspace auth rather than any
- *   module-local auth. Every /api/assets and /api/projects route requires
- *   a valid bearer token and verified workspace membership before it's
- *   reachable (previously: no auth at all — see AUDIT_REPORT.md, Issue #2).
- * - Mounted at /api/assets and /api/projects respectively.
+ * Wires the Assets, Projects, and persistent Aura Agent workflow modules into
+ * AuraPost's existing Express app. All routes reuse the shared PostgreSQL pool
+ * and the established authenticated user/workspace context.
  */
 export function mountAssetsProjects(app: Express, pool: Pool, auth: AssetsProjectsAuthMiddleware): void {
   initAssetsProjectsDb(pool);
@@ -31,6 +25,7 @@ export function mountAssetsProjects(app: Express, pool: Pool, auth: AssetsProjec
 
   api.use('/assets', assetRoutes);
   api.use('/projects', projectRoutes);
+  api.use('/agent', createAuraAgentRouter(pool));
 
   app.use('/api', api);
 }
