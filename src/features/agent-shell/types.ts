@@ -12,6 +12,7 @@ export type AgentToolId =
   | 'import'
   | 'analyzer'
   | 'campaign_brief'
+  | 'content_package'
   | 'video'
   | 'content_studio'
   | 'image_studio'

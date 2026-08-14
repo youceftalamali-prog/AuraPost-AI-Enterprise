@@ -1,0 +1,18 @@
+import type { AgentWorkflow } from './agentWorkflowApi';
+
+export interface ContentHook{type:string;text:string;evidenceRefs:string[]}
+export interface ContentScene{order:number;visual:string;voiceover:string;onScreenText:string;evidenceRefs:string[]}
+export interface ContentScript{platform:string;title:string;durationSeconds:number;hook:string;scenes:ContentScene[];cta:string;evidenceRefs:string[]}
+export interface ContentAd{platform:string;format:'short'|'medium'|'long';headline:string;primaryText:string;cta:string;evidenceRefs:string[]}
+export interface ContentPackagePayload{
+ campaignTitle:string;hooks:ContentHook[];scripts:ContentScript[];ads:ContentAd[];
+ descriptions:{short:string;long:string;seoTitle:string;seoDescription:string;evidenceRefs:string[]};
+ emails:Array<{type:string;subject:string;body:string;evidenceRefs:string[]}>;
+ landingPage:{headline:string;subheadline:string;benefits:string[];objectionResponses:Array<{objection:string;response:string}>;faq:Array<{question:string;answer:string}>;cta:string;evidenceRefs:string[]};
+ creativePrompts:{images:string[];videoConcepts:string[]};complianceNotes:string[];
+}
+export interface CampaignContentPackage{id:string;workflowId:string;briefId:string;version:number;status:string;locale:string;payload:ContentPackagePayload;provider:string;model:string;tokens:{prompt:number|null;completion:number|null};latencyMs:number;creditsCharged:number;createdAt:string}
+
+async function request<T>(url:string,init?:RequestInit):Promise<T>{const response=await fetch(url,{...init,credentials:'include',headers:{Accept:'application/json',...(init?.body?{'Content-Type':'application/json'}:{}),...(init?.headers||{})}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(typeof payload.error==='string'?payload.error:'Campaign Content Package request failed.');return payload as T;}
+export async function loadLatestCampaignContentPackage(workflow:AgentWorkflow,signal?:AbortSignal):Promise<CampaignContentPackage|null>{const result=await request<{contentPackage:CampaignContentPackage|null}>(`/api/agent/workflows/${encodeURIComponent(workflow.id)}/content-packages/latest`,{signal});return result.contentPackage;}
+export async function generateCampaignContentPackage(workflow:AgentWorkflow):Promise<CampaignContentPackage>{const key=globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`;const result=await request<{contentPackage:CampaignContentPackage}>(`/api/agent/workflows/${encodeURIComponent(workflow.id)}/content-packages/generate`,{method:'POST',headers:{'Idempotency-Key':key},body:'{}'});return result.contentPackage;}
