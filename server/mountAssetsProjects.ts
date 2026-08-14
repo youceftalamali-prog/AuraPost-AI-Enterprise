@@ -7,6 +7,7 @@ import assetRoutes from './assets/routes/index';
 import projectRoutes from './projects/routes/index';
 import { createAuraAgentRouter } from './agent/mount';
 import { createCampaignBriefRouter } from './agent/campaignBriefRouter';
+import { createCampaignContentRouter } from './agent/campaignContentRouter';
 
 export interface AssetsProjectsAuthMiddleware {
   requireAuthAndWorkspace: () => Array<(req: any, res: any, next: any) => any>;
@@ -21,5 +22,6 @@ export function mountAssetsProjects(app: Express, pool: Pool, auth: AssetsProjec
   api.use('/projects', projectRoutes);
   api.use('/agent', createAuraAgentRouter(pool));
   api.use('/agent', createCampaignBriefRouter(pool));
+  api.use('/agent', createCampaignContentRouter(pool));
   app.use('/api', api);
 }
