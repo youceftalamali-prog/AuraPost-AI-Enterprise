@@ -11,6 +11,7 @@ const ProductsCatalog = React.lazy(() => import('../../components/ProductsCatalo
 const ProductImport = React.lazy(() => import('../../components/ProductImport'));
 const ProductAnalyzer = React.lazy(() => import('../../components/ProductAnalyzer'));
 const CampaignBriefEditor = React.lazy(() => import('./CampaignBriefEditor'));
+const CampaignContentPackageView = React.lazy(() => import('./CampaignContentPackageView'));
 const ImageStudio = React.lazy(() => import('../../components/ImageStudio'));
 const VideoStudio = React.lazy(() => import('../../video-studio/components/VideoStudio/StudioShell').then((module) => ({ default: module.StudioShell })));
 const SettingsModule = React.lazy(() => import('../../components/SettingsModule'));
@@ -18,12 +19,12 @@ const SettingsModule = React.lazy(() => import('../../components/SettingsModule'
 interface AgentFirstWorkspaceProps { session: Session; testMode: boolean; onLogout: () => void | Promise<void>; onAddAuditLog: (action: string, details: string) => void }
 const toolLabels: Record<AgentToolId, Record<AgentLocale, string>> = {
   catalog:{ar:'اختيار المنتج',fr:'Choisir le produit',en:'Choose product'}, import:{ar:'استيراد المنتج',fr:'Importer le produit',en:'Import product'},
-  analyzer:{ar:'تحليل المنتج والأسواق',fr:'Analyser le produit',en:'Analyze product'}, campaign_brief:{ar:'موجز الحملة الذكي',fr:'Brief de campagne',en:'Campaign brief'},
+  analyzer:{ar:'تحليل المنتج والأسواق',fr:'Analyser le produit',en:'Analyze product'}, campaign_brief:{ar:'موجز الحملة الذكي',fr:'Brief de campagne',en:'Campaign brief'}, content_package:{ar:'حزمة محتوى الحملة',fr:'Pack de contenu',en:'Content package'},
   video:{ar:'إنشاء الفيديو',fr:'Créer la vidéo',en:'Create video'}, content_studio:{ar:'إنشاء المحتوى',fr:'Créer le contenu',en:'Create content'},
   image_studio:{ar:'إنشاء الصورة',fr:"Créer l’image",en:'Create image'}, settings:{ar:'الإعدادات',fr:'Paramètres',en:'Settings'},
 };
 const stepToTool: Partial<Record<AgentWorkflowStep, AgentToolId>> = {
-  import_product:'import',select_product:'catalog',prepare_assets:'image_studio',campaign_brief:'campaign_brief',market_analysis:'analyzer',content_generation:'content_studio',creative_direction:'image_studio',video_generation:'video',campaign_export:'content_studio',
+  import_product:'import',select_product:'catalog',prepare_assets:'image_studio',campaign_brief:'campaign_brief',market_analysis:'analyzer',content_generation:'content_package',creative_direction:'image_studio',video_generation:'video',campaign_export:'content_package',
 };
 function isAgentLocale(value:string):value is AgentLocale{return value==='ar'||value==='fr'||value==='en';}
 
@@ -37,13 +38,14 @@ export function AgentFirstWorkspace({session,testMode,onLogout,onAddAuditLog}:Ag
  const releasePolicySafe=useMemo(()=>!manifest.features.socialConnections&&!manifest.features.publishing&&!manifest.features.smartRepost&&!manifest.features.paidAds,[manifest]);
  const persistPatch=async(patch:AgentWorkflowPatch)=>{if(!activeWorkflow)return null;try{const updated=await patchAgentWorkflow(activeWorkflow,patch);setActiveWorkflow(updated);setWorkflowWarning(false);return updated;}catch{setWorkflowWarning(true);return null;}};
  const openTool=(tool:AgentToolId,reason:string)=>{setActiveTool(tool);onAddAuditLog('agent.workflow_opened',reason);};
- const moveWorkflow=async(tool:AgentToolId,step:AgentWorkflowStep,reason:string,patch:AgentWorkflowPatch={})=>{await persistPatch({...patch,currentStep:step});openTool(tool,reason);};
+ const moveWorkflow=async(tool:AgentToolId,step:AgentWorkflowStep,reason:string,patch:AgentWorkflowPatch={})=>{const updated=await persistPatch({...patch,currentStep:step});if(!updated)return;openTool(tool,reason);};
  const handleStart=async(mode:AgentSourceMode,prompt:string)=>{const promptContext=prompt?` Prompt: ${prompt}`:'';try{const workflow=await createAgentWorkflow({sourceMode:mode,locale,prompt,templateId:selectedTemplate?.id,productId:mode==='saved_product'?selectedProductId:undefined});setActiveWorkflow(workflow);setWorkflowWarning(false);}catch{setWorkflowWarning(true);}if(mode==='url'){openTool('import',`Aura requested a product URL.${promptContext}`);return;}if(mode==='image'){openTool('image_studio',`Aura requested an image-based workflow.${promptContext}`);return;}if(mode==='saved_product'){openTool('catalog',`Aura requested a saved product.${promptContext}`);return;}openTool('campaign_brief',`Aura opened the campaign brief${selectedTemplate?` with template ${selectedTemplate.id}`:''}.${promptContext}`);};
  const renderActiveTool=()=>{if(!activeTool)return null;switch(activeTool){
   case 'catalog':return <ProductsCatalog workspaceId={workspaceId} initialSelectedProductId={selectedProductId} onSelectProductForAnalysis={(productId)=>{setSelectedProductId(productId);void moveWorkflow('analyzer','market_analysis','Aura moved the selected product to market analysis.',{productId});}} onSelectProductForStudio={(productId)=>{setSelectedProductId(productId);void moveWorkflow('campaign_brief','campaign_brief','Aura moved the selected product to campaign planning.',{productId});}} onAddAuditLog={onAddAuditLog}/>;
   case 'import':return <ProductImport workspaceId={workspaceId} onAddAuditLog={onAddAuditLog} onImportSuccess={(productId)=>{setSelectedProductId(productId);void moveWorkflow('catalog','select_product','Aura imported the product and opened it for review.',{productId});}}/>;
   case 'analyzer':return <ProductAnalyzer workspaceId={workspaceId} selectedProductIdFromCatalog={selectedProductId} onAddAuditLog={onAddAuditLog}/>;
-  case 'campaign_brief':return <CampaignBriefEditor locale={locale} workflow={activeWorkflow} onAddAuditLog={onAddAuditLog} onApproved={()=>{void moveWorkflow('content_studio','content_generation','Aura approved the campaign brief and opened content creation.');}}/>;
+  case 'campaign_brief':return <CampaignBriefEditor locale={locale} workflow={activeWorkflow} onAddAuditLog={onAddAuditLog} onApproved={()=>{void moveWorkflow('content_package','content_generation','Aura approved the campaign brief and opened the content package.');}}/>;
+  case 'content_package':return <CampaignContentPackageView locale={locale} workflow={activeWorkflow} onAddAuditLog={onAddAuditLog}/>;
   case 'image_studio':return <ImageStudio workspaceId={workspaceId} onAddAuditLog={onAddAuditLog} selectedProductIdFromCatalog={selectedProductId} initialActiveTab="graphics" testMode={testMode}/>;
   case 'content_studio':return <ImageStudio workspaceId={workspaceId} onAddAuditLog={onAddAuditLog} selectedProductIdFromCatalog={selectedProductId} initialActiveTab="copy" testMode={testMode}/>;
   case 'video':return <VideoStudio/>;case 'settings':return <SettingsModule/>;default:return null;
