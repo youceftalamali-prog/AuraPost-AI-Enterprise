@@ -1,7 +1,6 @@
 import type { Express } from 'express';
 import { Router } from 'express';
 import type { Pool } from 'pg';
-
 import { initAssetsProjectsDb } from './database/index';
 import assetRoutes from './assets/routes/index';
 import projectRoutes from './projects/routes/index';
@@ -10,24 +9,7 @@ import { createCampaignBriefRouter } from './agent/campaignBriefRouter';
 import { createCampaignContentRouter } from './agent/campaignContentRouter';
 import { createCreativeDirectionRouter } from './agent/creativeDirectionRouter';
 import { createProductionBlueprintRouter } from './agent/productionBlueprintRouter';
+import { createMediaAssetRouter } from './agent/mediaAssetRouter';
 import { createCampaignExportRouter } from './agent/campaignExportRouter';
-
-export interface AssetsProjectsAuthMiddleware {
-  requireAuthAndWorkspace: () => Array<(req: any, res: any, next: any) => any>;
-  attachAssetsProjectsContext: (req: any, res: any, next: any) => any;
-}
-
-export function mountAssetsProjects(app: Express, pool: Pool, auth: AssetsProjectsAuthMiddleware): void {
-  initAssetsProjectsDb(pool);
-  const api = Router();
-  api.use(...auth.requireAuthAndWorkspace(), auth.attachAssetsProjectsContext);
-  api.use('/assets', assetRoutes);
-  api.use('/projects', projectRoutes);
-  api.use('/agent', createAuraAgentRouter(pool));
-  api.use('/agent', createCampaignBriefRouter(pool));
-  api.use('/agent', createCampaignContentRouter(pool));
-  api.use('/agent', createCreativeDirectionRouter(pool));
-  api.use('/agent', createProductionBlueprintRouter(pool));
-  api.use('/agent', createCampaignExportRouter(pool));
-  app.use('/api', api);
-}
+export interface AssetsProjectsAuthMiddleware {requireAuthAndWorkspace:()=>Array<(req:any,res:any,next:any)=>any>;attachAssetsProjectsContext:(req:any,res:any,next:any)=>any}
+export function mountAssetsProjects(app:Express,pool:Pool,auth:AssetsProjectsAuthMiddleware):void{initAssetsProjectsDb(pool);const api=Router();api.use(...auth.requireAuthAndWorkspace(),auth.attachAssetsProjectsContext);api.use('/assets',assetRoutes);api.use('/projects',projectRoutes);api.use('/agent',createAuraAgentRouter(pool));api.use('/agent',createCampaignBriefRouter(pool));api.use('/agent',createCampaignContentRouter(pool));api.use('/agent',createCreativeDirectionRouter(pool));api.use('/agent',createProductionBlueprintRouter(pool));api.use('/agent',createMediaAssetRouter(pool));api.use('/agent',createCampaignExportRouter(pool));app.use('/api',api);}
