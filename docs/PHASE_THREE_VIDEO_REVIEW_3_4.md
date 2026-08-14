@@ -1,24 +1,21 @@
 # Phase 3.4 — Video Review & Scene Regeneration
 
-## Delivered foundation and persistence
+## Phase 3.4.3 selective regeneration
 
-- Versioned deterministic `aurapost.video-review.v1` contract.
-- PostgreSQL-backed reviews scoped by workflow, workspace and user.
-- Review creation requires the latest completed Video Rendering batch.
-- Frame-bounded annotations for visual, caption, timing and compliance feedback.
-- Optimistic version checks prevent two sessions from silently overwriting feedback.
-- Scene revision requests reference one rendered job and approved scene.
-- Revisions may replace a visual prompt and/or overlay text while preserving scene duration and product integrity.
-- Duplicate revision requests are idempotent by SHA-256.
-- Approved reviews are immutable.
+- A revision executes only against a successful source render owned by the same workspace and review.
+- Caption-only revisions reuse the approved image asset and reserve only video credits.
+- Visual revisions generate one replacement image, reserve AI and video credits separately, and keep every untouched scene asset unchanged.
+- The approved target dimensions, scene order, scene durations, product-preservation rule and render plan remain immutable.
+- Each revision creates private replacement-image and MP4 objects under a revision-specific storage prefix.
+- The previous successful video remains untouched and available for rollback.
+- Credit reservation is transactional across AI and video buckets; any provider, render, validation or storage failure refunds both reservations.
+- API responses expose only 15-minute signed video URLs, hashes and metadata, never storage keys.
 
 ## API
 
-- `GET /api/agent/workflows/:workflowId/video-reviews/latest`
-- `POST /api/agent/workflows/:workflowId/video-reviews`
-- `POST /api/agent/workflows/:workflowId/video-reviews/:reviewId/annotations`
-- `POST /api/agent/workflows/:workflowId/video-reviews/:reviewId/revisions`
+- `GET /api/agent/workflows/:workflowId/video-reviews/:reviewId/revisions/:revisionId`
+- `POST /api/agent/workflows/:workflowId/video-reviews/:reviewId/revisions/:revisionId/execute`
 
-## Safety boundary
+## Deployment gates
 
-The current slice persists review and revision intent only. It does not call an image provider, reserve credits, replace a successful video, or publish content. The selective-regeneration slice will regenerate only the chosen scene, create a new immutable video version, preserve the previous successful version for rollback, and settle credits only for completed work.
+Visual revisions require the verified image-provider gate. Every revision requires the verified FFmpeg/FFprobe gate. Publishing, scheduling, Smart Repost and paid ads remain disabled.
