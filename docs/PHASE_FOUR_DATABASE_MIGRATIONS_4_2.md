@@ -8,10 +8,15 @@
 - A changed applied migration fails closed instead of silently drifting production schema.
 - All Aura API requests wait for the startup migration barrier.
 - Migration failures roll back atomically and propagate to the server error boundary.
-- The central plan covers workflows, campaign content, creative direction, export, production blueprint, media, render, review, revision and delivery tables.
 
-## Remaining 4.2 work
+## 4.2.2 Router DDL retirement and PostgreSQL verification
 
-- remove compatibility `CREATE TABLE IF NOT EXISTS` blocks from legacy Aura routers after PostgreSQL integration verification;
-- split future schema changes into append-only numbered migrations;
-- add PostgreSQL upgrade, rollback and concurrent-start integration tests.
+- Aura routers receive a migration-aware Pool facade.
+- Legacy inline `CREATE TABLE IF NOT EXISTS aura_*` initialization is suppressed and never reaches PostgreSQL.
+- Business queries, transactions, clients and pool methods still use the shared real Pool.
+- Startup continues to fail closed until the canonical migration completes.
+- Unit tests prove schema writes are intercepted while normal SQL is forwarded.
+- `npm run test:migrations` runs an opt-in real PostgreSQL upgrade test when `TEST_DATABASE_URL` is available.
+- The PostgreSQL test creates an isolated schema, runs two concurrent startup migrations, reruns idempotently, validates checksums and drops the schema.
+
+Literal compatibility SQL constants can now be deleted from individual router source files without changing runtime schema ownership. Future schema changes must be new append-only numbered migrations.
