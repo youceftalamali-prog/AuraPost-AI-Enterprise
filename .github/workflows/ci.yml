@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, rebuild/agent-platform]
   pull_request:
-    branches: [main]
+    branches: [main, rebuild/agent-platform]
 
 jobs:
   lint:
@@ -18,6 +18,17 @@ jobs:
       - run: npm ci
       - run: npm run lint
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -29,9 +40,20 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+
   docker:
     runs-on: ubuntu-latest
-    needs: [lint, build]
+    needs: [lint, test, build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
