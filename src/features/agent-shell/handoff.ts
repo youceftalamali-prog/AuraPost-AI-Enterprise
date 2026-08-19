@@ -1,26 +1,78 @@
-import type { AgentSourceMode } from './types';
+import {
+  HANDOFF_STORAGE_KEY,
+  parseHandoff,
+  serializeHandoff,
+  type AgentWorkflowHandoff,
+} from './handoffStorage';
 
-export interface AgentWorkflowHandoff {
-  mode: AgentSourceMode;
-  prompt: string;
-  templateId?: string;
-  createdAt: number;
+export type { AgentWorkflowHandoff } from './handoffStorage';
+
+// In-memory fallback used when persistent storage is unavailable (SSR, unit
+// tests, privacy modes that throw on access, or quota-exceeded writes).
+let memoryFallback: AgentWorkflowHandoff | null = null;
+
+function storage(): Storage | null {
+  try {
+    return (globalThis as { localStorage?: Storage }).localStorage ?? null;
+  } catch {
+    return null;
+  }
 }
-
-let currentHandoff: AgentWorkflowHandoff | null = null;
-const HANDOFF_TTL_MS = 30 * 60 * 1_000;
 
 export function setAgentWorkflowHandoff(
   handoff: Omit<AgentWorkflowHandoff, 'createdAt'>,
 ): void {
-  currentHandoff = { ...handoff, createdAt: Date.now() };
+  const full: AgentWorkflowHandoff = { ...handoff, createdAt: Date.now() };
+  memoryFallback = full;
+
+  const store = storage();
+  if (store) {
+    try {
+      store.setItem(HANDOFF_STORAGE_KEY, serializeHandoff(full));
+    } catch {
+      // Keep the in-memory copy when persistence fails (e.g. quota/security).
+    }
+  }
 }
 
 export function getAgentWorkflowHandoff(): AgentWorkflowHandoff | null {
-  if (!currentHandoff) return null;
-  if (Date.now() - currentHandoff.createdAt > HANDOFF_TTL_MS) {
-    currentHandoff = null;
-    return null;
+  const store = storage();
+  if (store) {
+    try {
+      const raw = store.getItem(HANDOFF_STORAGE_KEY);
+      if (raw !== null) {
+        const parsed = parseHandoff(raw);
+        if (parsed) {
+          memoryFallback = parsed;
+          return parsed;
+        }
+        // Expired or malformed: clear both layers.
+        store.removeItem(HANDOFF_STORAGE_KEY);
+        memoryFallback = null;
+        return null;
+      }
+      // Nothing persisted: fall through to the in-memory fallback below.
+    } catch {
+      // Storage read failed: fall through to the in-memory fallback below.
+    }
   }
-  return { ...currentHandoff };
+
+  if (memoryFallback) {
+    const stillValid = parseHandoff(serializeHandoff(memoryFallback));
+    if (stillValid) return stillValid;
+    memoryFallback = null;
+  }
+  return null;
+}
+
+export function clearAgentWorkflowHandoff(): void {
+  memoryFallback = null;
+  const store = storage();
+  if (store) {
+    try {
+      store.removeItem(HANDOFF_STORAGE_KEY);
+    } catch {
+      // Ignore storage removal failures.
+    }
+  }
 }
