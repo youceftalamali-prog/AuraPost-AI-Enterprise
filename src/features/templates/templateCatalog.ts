@@ -192,7 +192,7 @@ export const SEED_TEMPLATES: ReadyTemplate[] = [
     subBranchId: 'formal',
     title: { ar: 'إطلالة رسمية', fr: 'Ligne formelle', en: 'Formal Editorial' },
     description: { ar: 'تصوير أنيق بإضاءة ناعمة.', fr: 'Prise de vue élégante à lumière douce.', en: 'Elegant capture with soft lighting.' },
-    aspectRatio: '4:5' === '4:5' ? '1:1' : '1:1',
+    aspectRatio: '1:1',
     accent: 'from-fuchsia-500/25 to-purple-700/10',
     actorLocales: ['fr', 'en'],
     isTwoPerson: false,
