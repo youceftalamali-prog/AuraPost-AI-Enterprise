@@ -8,6 +8,7 @@ import {
   normalizeAgentWorkflowPatch,
   normalizeIdempotencyKey,
 } from './contracts';
+import { createAuraAgentChatRouter } from './agentChatRouter';
 
 const AGENT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS aura_agent_workflows (
@@ -215,6 +216,8 @@ export function createAuraAgentRouter(pool: Pool): Router {
       return sendContractError(res, error);
     }
   });
+
+  router.use(createAuraAgentChatRouter(pool));
 
   return router;
 }
