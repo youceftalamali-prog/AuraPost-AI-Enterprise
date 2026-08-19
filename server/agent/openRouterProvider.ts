@@ -32,7 +32,16 @@ export class AgentProviderError extends Error {
   }
 }
 
-export const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
+// Default model: Google Gemini 2.5 Flash via OpenRouter. Chosen for the
+// AuraPost workload as a low-cost, multimodal (vision-capable) model with
+// strong Arabic support and native tool-calling. It powers the LLM "brain":
+// hashtags, captions, product-image analysis, and authoring the prompts that
+// drive image/video generation. NOTE: this LLM does NOT render image pixels or
+// video; those come from dedicated providers (image model, HeyGen/D-ID for
+// avatars, Veo/Kling for cinematic clips, FFmpeg for assembly). Override per
+// deployment with the OPENROUTER_MODEL environment variable (e.g.
+// 'google/gemini-2.0-flash-001' for maximum savings, or 'openai/gpt-5-mini').
+export const DEFAULT_OPENROUTER_MODEL = 'google/gemini-2.5-flash';
 export const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 /** Minimal fetch surface we depend on, so we avoid DOM lib coupling in tsc. */
