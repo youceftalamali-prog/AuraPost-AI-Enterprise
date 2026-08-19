@@ -4,9 +4,8 @@ import {
 	estimateCost,
 	previewGeneration,
 	OPERATION_POINT_COSTS,
-	POINTS_ERROR_INVALID_AMOUNT,
 } from '../../server/points/costPreview.ts';
-import { PointsError } from '../../server/points/pointsMath.ts';
+import { PointsError, POINTS_ERROR_INVALID_AMOUNT } from '../../server/points/pointsMath.ts';
 
 test('a single image costs its unit price', () => {
 	const preview = estimateCost([{ kind: 'image' }]);
