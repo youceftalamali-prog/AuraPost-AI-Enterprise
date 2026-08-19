@@ -32,16 +32,19 @@ export class AgentProviderError extends Error {
   }
 }
 
-// Default model: Google Gemini 2.5 Flash via OpenRouter. Chosen for the
-// AuraPost workload as a low-cost, multimodal (vision-capable) model with
-// strong Arabic support and native tool-calling. It powers the LLM "brain":
-// hashtags, captions, product-image analysis, and authoring the prompts that
-// drive image/video generation. NOTE: this LLM does NOT render image pixels or
-// video; those come from dedicated providers (image model, HeyGen/D-ID for
-// avatars, Veo/Kling for cinematic clips, FFmpeg for assembly). Override per
-// deployment with the OPENROUTER_MODEL environment variable (e.g.
-// 'google/gemini-2.0-flash-001' for maximum savings, or 'openai/gpt-5-mini').
-export const DEFAULT_OPENROUTER_MODEL = 'google/gemini-2.5-flash';
+// Default model: Qwen3-VL 235B A22B Instruct (Alibaba) via OpenRouter. Chosen
+// for the AuraPost workload as a native vision-language model with the
+// strongest Arabic support in its class (multilingual OCR + generation),
+// native tool-calling, and structured outputs at a competitive price
+// (~$0.30/$1.50 per 1M tokens). It powers the LLM "brain": hashtags, captions,
+// product-image analysis (vision), and authoring the prompts that drive
+// image/video generation. NOTE: this LLM does NOT render image pixels or
+// video; those come from dedicated providers (image model such as Nano Banana
+// Pro / Seedream, HeyGen/D-ID for avatars, Veo/Kling for cinematic clips,
+// FFmpeg for assembly). Override per deployment with the OPENROUTER_MODEL
+// environment variable (e.g. 'qwen/qwen3-vl-30b-a3b-instruct' for lower cost,
+// or 'google/gemini-2.5-flash').
+export const DEFAULT_OPENROUTER_MODEL = 'qwen/qwen3-vl-235b-a22b-instruct';
 export const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 /** Minimal fetch surface we depend on, so we avoid DOM lib coupling in tsc. */
