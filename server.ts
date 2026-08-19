@@ -81,6 +81,20 @@ import pinoHttp from "pino-http";
 
 async function startServer() {
   const app = express();
+
+  const trustProxyRaw = process.env.TRUST_PROXY;
+  const trustProxySetting =
+    trustProxyRaw === undefined || trustProxyRaw.trim() === ""
+      ? 1
+      : /^\d+$/.test(trustProxyRaw.trim())
+        ? Number(trustProxyRaw.trim())
+        : trustProxyRaw.trim() === "true"
+          ? true
+          : trustProxyRaw.trim() === "false"
+            ? false
+            : trustProxyRaw.trim();
+  app.set("trust proxy", trustProxySetting);
+
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // SAFETY NET: Express 4 silently swallows rejected promises from async route
@@ -402,6 +416,15 @@ async function startServer() {
         options.paypalCaptureId
       );
     }
+    try {
+      await db.logAudit(
+        workspaceId,
+        "SUBSCRIPTION_PLAN_ACTIVATED",
+        `${options.reason} (plan=${plan}, interval=${interval}, status=${status}, provider=${options.paymentProvider || (options.paypalSubscriptionId ? "paypal" : "stripe")}).`
+      );
+    } catch (auditErr: any) {
+      logger.warn({ err: auditErr?.message, workspaceId }, "Failed to write subscription audit log entry");
+    }
     return subscription;
   };
 
@@ -453,8 +476,11 @@ async function startServer() {
     "/api/auth/meta/callback", // Meta OAuth redirect target - carries its own state/code verification
   ];
   app.use("/api", (req, res, next) => {
-    const isPublicWebhook = PUBLIC_WEBHOOK_PATHS.some((p) => req.path === p || req.originalUrl.startsWith(p));
-    if (isPublicWebhook || req.path.startsWith("/shopify/webhooks/")) {
+    const pathname = (req.originalUrl || req.url).split("?", 1)[0];
+    const isPublicWebhook =
+      PUBLIC_WEBHOOK_PATHS.includes(pathname) ||
+      pathname.startsWith("/api/shopify/webhooks/");
+    if (isPublicWebhook) {
       return next();
     }
     const [authMiddleware, workspaceMiddleware] = requireAuthAndWorkspace();
@@ -703,6 +729,13 @@ async function startServer() {
       return res.status(400).json({ error: "A valid plan is required." });
     }
 
+    if (plan !== "free" && process.env.NODE_ENV === "production") {
+      return res.status(403).json({
+        error: "Paid plans must be activated through a verified payment checkout.",
+        code: "PAYMENT_REQUIRED_FOR_PLAN_CHANGE",
+      });
+    }
+
     const subscription = await activatePlan(workspaceId, plan, billingInterval, {
       reason: `Changed subscription to ${plan} (${billingInterval}).`,
       stripeMode: getStripeMode(),
@@ -769,6 +802,12 @@ async function startServer() {
       });
 
       if (session.mode === "sandbox") {
+        if (plan !== "free" && process.env.NODE_ENV === "production") {
+          return res.status(503).json({
+            error: "Payments are not configured on this server (Stripe is in sandbox mode). Paid plans cannot be activated without a live payment provider.",
+            code: "BILLING_NOT_CONFIGURED",
+          });
+        }
         await activatePlan(workspaceId, plan, billingInterval, {
           reason: `Sandbox checkout completed for ${plan} (${billingInterval}).`,
           stripeMode: "sandbox",
@@ -2472,7 +2511,7 @@ async function startServer() {
   // --- Image Studio Pro API Endpoints ---
   app.post("/api/images/generate", aiGenerationRateLimiter, async (req, res) => {
     const { prompt, provider = "flux", aspectRatio = "1:1", category, mode = "text_to_image", productImageBase64 } = req.body;
-    const workspaceId = (req.body.workspaceId as string) || (req.query.workspaceId as string) || (req.headers["x-workspace-id"] as string) || (req as any).workspaceId;
+    const workspaceId = (req as any).workspaceId || (req.body.workspaceId as string) || (req.query.workspaceId as string);
     if (!prompt) {
       return res.status(400).json({ error: "Missing required parameter 'prompt'." });
     }
