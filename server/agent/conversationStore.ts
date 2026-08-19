@@ -29,9 +29,15 @@ export const MAX_CONVERSATION_PAGE_SIZE = 50;
 export const AGENT_CONVERSATION_NOT_FOUND = 'AGENT_CONVERSATION_NOT_FOUND';
 export const AGENT_CONVERSATION_WRITE_FAILED = 'AGENT_CONVERSATION_WRITE_FAILED';
 
-/** Minimal query surface satisfied by pg Pool and PoolClient. */
+/**
+ * Minimal query surface satisfied by pg Pool and PoolClient. The generic row
+ * type is intentionally unconstrained: constraining it to
+ * `Record<string, unknown>` would reject interface row types such as
+ * ConversationRow/MessageRow, since interfaces do not get an implicit index
+ * signature under tsc.
+ */
 export interface Queryable {
-  query<R extends Record<string, unknown> = Record<string, unknown>>(
+  query<R = Record<string, unknown>>(
     text: string,
     params?: unknown[],
   ): Promise<{ rows: R[]; rowCount?: number | null }>;
