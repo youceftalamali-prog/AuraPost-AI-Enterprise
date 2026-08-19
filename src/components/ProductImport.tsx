@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   AlertCircle,
+  Bot,
   CheckCircle2,
   Clock3,
   Download,
@@ -19,11 +20,13 @@ import {
 import type { ImportOperation } from "../types.ts";
 import type { AgentLocale } from "../features/agent-shell/types";
 import { getAgentWorkflowHandoff } from "../features/agent-shell/handoff";
+import { importOperationToEntry, type ActivityLogEntry } from "../features/activity-log/activityLog";
 
 interface ProductImportProps {
   workspaceId: string;
   onAddAuditLog: (action: string, details: string) => void;
   onImportSuccess: (productId: string) => void;
+  onJumpToAgent?: (entry: ActivityLogEntry) => void;
 }
 
 type ImportPhase = "idle" | "queued" | "processing" | "success" | "failed";
@@ -43,6 +46,7 @@ const copy = {
     history: "سجل الاستيراد", empty: "لا توجد عمليات سابقة.", charged: "الرصيد المخصوم", attempts: "المحاولات",
     invalidUrl: "أدخل رابط HTTP أو HTTPS صالحاً.", timeout: "توقفت المتابعة بعد ثلاث دقائق. تحقق من السجل قبل إعادة المحاولة.",
     missingOperation: "لم يعُد الخادم بمعرّف العملية.", genericError: "تعذر بدء الاستيراد.", unsupported: "غير معروف حتى يتم التحقق",
+    openInAgent: "افتح في الوكيل",
   },
   fr: {
     title: "Importer avec Aura", subtitle: "Collez le lien du produit. Aura le vérifie et n’importe que des données réelles.",
@@ -53,6 +57,7 @@ const copy = {
     history: "Historique", empty: "Aucune opération précédente.", charged: "Crédits débités", attempts: "Tentatives",
     invalidUrl: "Saisissez une URL HTTP ou HTTPS valide.", timeout: "Le suivi a expiré après trois minutes. Vérifiez l’historique avant de réessayer.",
     missingOperation: "Le serveur n’a pas renvoyé d’identifiant d’opération.", genericError: "Impossible de démarrer l’import.", unsupported: "Inconnue avant vérification",
+    openInAgent: "Ouvrir dans Aura",
   },
   en: {
     title: "Import product with Aura", subtitle: "Paste a product link. Aura verifies it and imports real product data only.",
@@ -63,6 +68,7 @@ const copy = {
     history: "Import history", empty: "No previous operations.", charged: "Credits charged", attempts: "Attempts",
     invalidUrl: "Enter a valid HTTP or HTTPS product URL.", timeout: "Tracking stopped after three minutes. Check history before retrying.",
     missingOperation: "The server did not return an operation identifier.", genericError: "The import could not be started.", unsupported: "Unknown until verified",
+    openInAgent: "Open in agent",
   },
 } satisfies Record<AgentLocale, Record<string, string>>;
 
@@ -136,7 +142,7 @@ function currentLocale(): AgentLocale {
   return "ar";
 }
 
-export default function ProductImport({ workspaceId, onAddAuditLog, onImportSuccess }: ProductImportProps) {
+export default function ProductImport({ workspaceId, onAddAuditLog, onImportSuccess, onJumpToAgent }: ProductImportProps) {
   const seed = useMemo(initialHandoff, []);
   const [locale, setLocale] = useState<AgentLocale>(currentLocale);
   const [url, setUrl] = useState(seed.url);
@@ -288,7 +294,7 @@ export default function ProductImport({ workspaceId, onAddAuditLog, onImportSucc
 
         <section className="space-y-3"><h3 className="flex items-center gap-2 text-sm font-semibold text-white"><Clock3 className="h-4 w-4 text-indigo-300" />{text.history}</h3><div className="max-h-[520px] space-y-3 overflow-y-auto pr-1">{loadingHistory ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div> : history.length === 0 ? <div className="rounded-2xl border border-white/10 bg-black/20 p-8 text-center text-sm text-slate-500">{text.empty}</div> : history.map((operation) => {
           const safeHref = normalizeBrowserUrl(operation.sourceUrl);
-          return <article key={operation.id} className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex items-center justify-between gap-3"><strong className="text-xs text-slate-300">{operation.provider}</strong><span className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] ${operation.status === "success" ? "bg-emerald-400/10 text-emerald-300" : operation.status === "failed" ? "bg-rose-400/10 text-rose-300" : "bg-indigo-400/10 text-indigo-300"}`}>{operation.status === "success" ? <CheckCircle2 className="h-3 w-3" /> : operation.status === "failed" ? <XCircle className="h-3 w-3" /> : <Loader2 className="h-3 w-3 animate-spin" />}{operation.status}</span></div>{safeHref ? <a href={safeHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 truncate text-xs text-indigo-300 hover:underline"><span className="truncate">{operation.sourceUrl}</span><ExternalLink className="h-3 w-3 shrink-0" /></a> : <p className="truncate text-xs text-slate-500">{operation.sourceUrl}</p>}<div className="flex justify-between border-t border-white/5 pt-2 text-[10px] text-slate-500"><span>{text.charged}: {operation.creditCharged || 0}</span><span>{operation.createdAt ? new Date(operation.createdAt).toLocaleDateString(locale) : ""}</span></div></article>;
+          return <article key={operation.id} className="space-y-2 rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex items-center justify-between gap-3"><strong className="text-xs text-slate-300">{operation.provider}</strong><span className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] ${operation.status === "success" ? "bg-emerald-400/10 text-emerald-300" : operation.status === "failed" ? "bg-rose-400/10 text-rose-300" : "bg-indigo-400/10 text-indigo-300"}`}>{operation.status === "success" ? <CheckCircle2 className="h-3 w-3" /> : operation.status === "failed" ? <XCircle className="h-3 w-3" /> : <Loader2 className="h-3 w-3 animate-spin" />}{operation.status}</span></div>{safeHref ? <a href={safeHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 truncate text-xs text-indigo-300 hover:underline"><span className="truncate">{operation.sourceUrl}</span><ExternalLink className="h-3 w-3 shrink-0" /></a> : <p className="truncate text-xs text-slate-500">{operation.sourceUrl}</p>}<div className="flex justify-between border-t border-white/5 pt-2 text-[10px] text-slate-500"><span>{text.charged}: {operation.creditCharged || 0}</span><span>{operation.createdAt ? new Date(operation.createdAt).toLocaleDateString(locale) : ""}</span></div>{onJumpToAgent && <button type="button" onClick={() => onJumpToAgent(importOperationToEntry({ id: operation.id, sourceUrl: operation.sourceUrl, status: operation.status, provider: operation.provider, productId: operation.productId, createdAt: operation.createdAt }))} className="flex w-full items-center justify-center gap-1 rounded-lg border border-indigo-400/20 bg-indigo-400/10 px-2 py-1.5 text-[11px] text-indigo-200 transition hover:bg-indigo-400/20"><Bot className="h-3 w-3" />{text.openInAgent}</button>}</article>;
         })}</div></section>
       </div>
     </div>
