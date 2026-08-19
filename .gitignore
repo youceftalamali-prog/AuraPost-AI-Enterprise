@@ -21,3 +21,8 @@ storage/*.json
 
 # Test
 test-db.cjs
+
+# TLS certificates (provide per-environment; never commit)
+certs/*.pem
+certs/*.key
+!certs/README.md
