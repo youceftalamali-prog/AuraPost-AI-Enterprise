@@ -1,12 +1,17 @@
 # DEPLOYMENT.md
 
-Quick-start deployment guide for AuraPost AI. For platform-specific instructions (Google Cloud Run, Railway) and the PostgreSQL migration path from a legacy SQLite installation, see the `DEPLOYMENT/` folder.
+Quick-start deployment guide for AuraPost AI. The **recommended** path is a
+self-hosted VPS using the repository's own `docker-compose` + `nginx` stack — see
+`DEPLOYMENT/VPS_DEPLOYMENT.md`. For other platforms (Google Cloud Run, Railway)
+and the PostgreSQL migration path from a legacy SQLite installation, see the
+`DEPLOYMENT/` folder.
 
 ## 1. Prerequisites
 
 - Node.js 20+ (built/tested against Node 22)
 - A PostgreSQL 14+ database (PostgreSQL is the only supported backend — see `POSTGRESQL_CUTOVER_REPORT.md`)
 - npm
+- For the containerized path: Docker + the Docker Compose plugin (bundles FFmpeg, PostgreSQL and nginx for you)
 
 ## 2. Required Configuration
 
@@ -21,6 +26,8 @@ ENCRYPTION_MASTER_KEY=$(openssl rand -base64 32)
 
 **The server refuses to start without these three secrets and a valid `DATABASE_URL`.** This is intentional (see `SECURITY_AUDIT.md` §2) — it fails loudly rather than silently running with an insecure default.
 
+Behind a reverse proxy (nginx / load balancer), also set `TRUST_PROXY=1` so `X-Forwarded-*` headers are honored.
+
 Add provider credentials incrementally as you enable each feature — see `DEPLOYMENT/REQUIRED_ENV_VARIABLES.md` for the complete list (PayPal, Stripe, Shopify, Meta, AI providers, video providers). Every feature whose credentials are left unset fails with a clear, honest error rather than a fabricated result — this is a deliberate design property of this codebase (see `PRODUCTION_READINESS_FINAL_REPORT.md`), not a bug.
 
 ## 3. Install & Build
@@ -31,6 +38,8 @@ npm run build
 ```
 
 This runs `vite build` (frontend → `dist/`) and bundles the Express backend via `esbuild` into `dist/server.cjs`. Both steps must complete with zero errors.
+
+> Using Docker Compose (recommended) does the build inside the image — you can skip the manual `npm install`/`npm run build` on the server. See `DEPLOYMENT/VPS_DEPLOYMENT.md`.
 
 ## 4. Database Bootstrap
 
@@ -44,7 +53,7 @@ If you are migrating from a legacy pre-PostgreSQL-cutover installation that stil
 node dist/server.cjs
 ```
 
-Listens on port **3000** (currently hardcoded — see `KNOWN_LIMITATIONS.md` if your platform requires binding to a `PORT` env var instead).
+Listens on the port from the `PORT` env var (defaults to **3000**).
 
 ## 6. Smoke Test
 
@@ -68,6 +77,8 @@ If `/api/workspace` returns anything other than a `401` without a valid Bearer t
 
 ## 8. Platform-Specific Guides
 
+- `DEPLOYMENT/VPS_DEPLOYMENT.md` (**recommended** — self-hosted docker-compose + nginx)
+- `DEPLOYMENT/STAGING_E2E_CHECKLIST.md` (end-to-end staging verification)
 - `DEPLOYMENT/GOOGLE_CLOUD_RUN.md`
 - `DEPLOYMENT/RAILWAY_DEPLOYMENT.md`
 - `DEPLOYMENT/POSTGRES_MIGRATION_GUIDE.md` (only needed if migrating from a legacy SQLite installation)
