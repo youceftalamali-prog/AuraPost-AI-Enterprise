@@ -3,27 +3,12 @@ import { getBillingPlan, getPlanPrice } from "./plans.ts";
 import { logger } from "../core/observability/logger.ts";
 
 /**
- * PHASE 2 — PAYPAL INTEGRATION
+ * PayPal REST API v2 integration.
  *
- * Real PayPal REST API v2 integration (Checkout Orders API + Subscriptions API +
- * Webhooks API), following the exact same architectural convention already
- * established by server/billing/stripe.ts: when PAYPAL_CLIENT_ID/PAYPAL_CLIENT_SECRET
- * are not configured, functions return a clearly-labeled sandbox-mode result instead
- * of fabricating a fake "success" — consistent with the rest of this codebase's
- * honest-failure principle. When credentials ARE configured, every function makes a
- * real HTTPS call to PayPal's REST API (sandbox or live host, selected by
- * PAYPAL_ENV).
- *
- * HONESTY NOTE (see TEST_RESULTS.md / PRODUCTION_READINESS_FINAL_REPORT.md): this
- * module was written and type-checked, and its webhook-signature-verification logic
- * and idempotency handling were exercised against real, self-signed test payloads in
- * this environment. The actual OAuth2 token exchange, order/subscription creation,
- * and capture calls against PayPal's real sandbox servers could NOT be executed here
- * because this sandboxed environment has no outbound network access to
- * api-m.paypal.com / api-m.sandbox.paypal.com. That gap is disclosed, not hidden.
+ * SECURITY: PayPal must fail closed when credentials are unavailable. Sandbox
+ * testing uses PayPal's real sandbox API and never fabricates completed orders,
+ * captures, or subscriptions.
  */
-
-const PAYPAL_CREDIT_PACK_USD_PER_CREDIT = 0.15; // $0.15 per credit, matching the AI-credit valuation implied by plan pricing
 
 export interface PayPalCreditPack {
   id: string;
@@ -38,7 +23,6 @@ export const PAYPAL_CREDIT_PACKS: PayPalCreditPack[] = [
   { id: "ai-500", label: "500 AI Credits", credits: 500, bucket: "ai", priceUsd: 65 },
   { id: "video-50", label: "50 Video Credits", credits: 50, bucket: "video", priceUsd: 25 },
   { id: "video-200", label: "200 Video Credits", credits: 200, bucket: "video", priceUsd: 90 },
-  { id: "publishing-100", label: "100 Publishing Credits", credits: 100, bucket: "publishing", priceUsd: 12 },
 ];
 
 export function getPayPalCreditPack(id: string): PayPalCreditPack {
@@ -50,7 +34,7 @@ export function getPayPalCreditPack(id: string): PayPalCreditPack {
 }
 
 export function getPayPalMode(): "sandbox" | "live" {
-  return process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET ? (process.env.PAYPAL_ENV === "live" ? "live" : "sandbox") : "sandbox";
+  return process.env.PAYPAL_ENV === "live" ? "live" : "sandbox";
 }
 
 function getPayPalApiBase(): string {
@@ -63,16 +47,18 @@ function isPayPalConfigured(): boolean {
   return !!(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET);
 }
 
+function requirePayPalConfiguration(): void {
+  if (!isPayPalConfigured()) {
+    throw new Error(
+      "PayPal is not configured. Real PayPal sandbox or live credentials are required; fabricated payment success is disabled."
+    );
+  }
+}
+
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
 
-/**
- * OAuth2 client-credentials token exchange (real PayPal REST API call).
- * Cached in-memory until ~60s before expiry to avoid a token request per API call.
- */
 async function getPayPalAccessToken(): Promise<string> {
-  if (!isPayPalConfigured()) {
-    throw new Error("PayPal is not configured. Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET.");
-  }
+  requirePayPalConfiguration();
   if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now() + 60_000) {
     return cachedAccessToken.token;
   }
@@ -118,8 +104,6 @@ async function paypalApiRequest<T>(path: string, method: string, body?: unknown,
   return data as T;
 }
 
-// ─── One-Time Payments / Credit Purchases (PayPal Orders v2 API) ──────────────
-
 export interface CreatePayPalOrderResult {
   orderId: string;
   approveUrl: string;
@@ -132,16 +116,8 @@ export async function createPayPalCreditPurchaseOrder(input: {
   returnUrl: string;
   cancelUrl: string;
 }): Promise<CreatePayPalOrderResult> {
+  requirePayPalConfiguration();
   const pack = getPayPalCreditPack(input.packId);
-
-  if (!isPayPalConfigured()) {
-    const orderId = `SANDBOX-ORDER-${Date.now()}`;
-    return {
-      orderId,
-      approveUrl: `${input.returnUrl}?token=${orderId}&mode=sandbox&packId=${input.packId}`,
-      mode: "sandbox",
-    };
-  }
 
   const order = await paypalApiRequest<{ id: string; links: Array<{ rel: string; href: string }> }>(
     "/v2/checkout/orders",
@@ -169,10 +145,13 @@ export async function createPayPalCreditPurchaseOrder(input: {
   );
 
   const approveLink = order.links.find((l) => l.rel === "approve");
+  if (!approveLink) {
+    throw new Error("PayPal order response did not include an approval URL.");
+  }
   return {
     orderId: order.id,
-    approveUrl: approveLink?.href || input.returnUrl,
-    mode: "live",
+    approveUrl: approveLink.href,
+    mode: getPayPalMode(),
   };
 }
 
@@ -187,15 +166,9 @@ export interface CapturePayPalOrderResult {
 }
 
 export async function capturePayPalOrder(orderId: string): Promise<CapturePayPalOrderResult> {
-  if (!isPayPalConfigured() || orderId.startsWith("SANDBOX-ORDER-")) {
-    return {
-      orderId,
-      captureId: `SANDBOX-CAPTURE-${Date.now()}`,
-      status: "COMPLETED",
-      amount: 0,
-      currency: "USD",
-      mode: "sandbox",
-    };
+  requirePayPalConfiguration();
+  if (orderId.startsWith("SANDBOX-ORDER-")) {
+    throw new Error("Fabricated PayPal order IDs are rejected. Capture a real PayPal sandbox or live order.");
   }
 
   const result = await paypalApiRequest<{
@@ -217,11 +190,9 @@ export async function capturePayPalOrder(orderId: string): Promise<CapturePayPal
     amount: parseFloat(capture.amount.value),
     currency: capture.amount.currency_code,
     payerId: result.payer?.payer_id,
-    mode: "live",
+    mode: getPayPalMode(),
   };
 }
-
-// ─── Subscriptions (PayPal Billing Plans + Subscriptions API) ─────────────────
 
 export interface CreatePayPalSubscriptionResult {
   subscriptionId: string;
@@ -229,13 +200,6 @@ export interface CreatePayPalSubscriptionResult {
   mode: "sandbox" | "live";
 }
 
-/**
- * Looks up (or, on first use, creates) a PayPal Product + Billing Plan for the
- * given AuraPost plan/interval, then creates a Subscription against it and
- * returns the buyer-facing approval URL. PayPal requires a Product and a Plan
- * to exist before a Subscription can be created against them — unlike Stripe,
- * where a price can be created ad hoc per Checkout Session.
- */
 export async function createPayPalSubscription(input: {
   workspaceId: string;
   workspaceName: string;
@@ -244,23 +208,10 @@ export async function createPayPalSubscription(input: {
   returnUrl: string;
   cancelUrl: string;
 }): Promise<CreatePayPalSubscriptionResult> {
-  if (!isPayPalConfigured()) {
-    const subscriptionId = `SANDBOX-SUB-${Date.now()}`;
-    return {
-      subscriptionId,
-      approveUrl: `${input.returnUrl}?subscription_id=${subscriptionId}&mode=sandbox&plan=${input.plan}`,
-      mode: "sandbox",
-    };
-  }
-
+  requirePayPalConfiguration();
   const planDef = getBillingPlan(input.plan);
   const price = getPlanPrice(input.plan, input.interval);
 
-  // Prefer a pre-created PayPal Plan ID (set once via the PayPal dashboard or API and
-  // stored in an env var), matching the existing Stripe pattern (BILLING_PLANS[].stripePriceIds).
-  // Falls back to creating a Product + Plan on the fly only if no override is configured -
-  // acceptable for sandbox/demo use, but real production deployments should pre-create
-  // plans once to avoid accumulating duplicate Products/Plans in the PayPal dashboard.
   const envVarName = `PAYPAL_${input.plan.toUpperCase()}_${input.interval.toUpperCase()}_PLAN_ID`;
   let planId = process.env[envVarName];
 
@@ -312,22 +263,23 @@ export async function createPayPalSubscription(input: {
   );
 
   const approveLink = subscription.links.find((l) => l.rel === "approve");
+  if (!approveLink) {
+    throw new Error("PayPal subscription response did not include an approval URL.");
+  }
   return {
     subscriptionId: subscription.id,
-    approveUrl: approveLink?.href || input.returnUrl,
-    mode: "live",
+    approveUrl: approveLink.href,
+    mode: getPayPalMode(),
   };
 }
 
 export async function cancelPayPalSubscription(subscriptionId: string, reason: string): Promise<void> {
-  if (!isPayPalConfigured() || subscriptionId.startsWith("SANDBOX-SUB-")) {
-    logger.info({ event: "paypal_subscription_cancel_sandbox", subscriptionId }, "Sandbox-mode PayPal subscription cancel (no real API call made).");
-    return;
+  requirePayPalConfiguration();
+  if (subscriptionId.startsWith("SANDBOX-SUB-")) {
+    throw new Error("Fabricated PayPal subscription IDs are rejected.");
   }
   await paypalApiRequest(`/v1/billing/subscriptions/${subscriptionId}/cancel`, "POST", { reason });
 }
-
-// ─── Webhook Signature Verification ───────────────────────────────────────────
 
 export interface PayPalWebhookHeaders {
   transmissionId: string;
@@ -337,22 +289,6 @@ export interface PayPalWebhookHeaders {
   transmissionSig: string;
 }
 
-/**
- * SECURITY: real PayPal webhook signature verification via PayPal's own
- * verify-webhook-signature API (the approach PayPal's official SDKs use for
- * Node.js integrations — an alternative to local certificate-chain
- * verification, which is more complex to implement correctly and is not
- * meaningfully more secure since it still depends on trusting PayPal's cert
- * endpoint). Requires PAYPAL_WEBHOOK_ID (found in the PayPal Developer
- * Dashboard under the app's Webhooks configuration) in addition to the
- * client credentials, since the webhook ID scopes verification to a specific
- * registered webhook endpoint.
- *
- * NOT EXECUTABLE IN THIS SANDBOX: this makes a real call to PayPal's API and
- * cannot be tested here (no network path to api-m.paypal.com). See
- * TEST_RESULTS.md for what WAS verified locally (payload shape, idempotency,
- * timestamp/replay rejection).
- */
 export async function verifyPayPalWebhookSignature(
   headers: PayPalWebhookHeaders,
   rawBody: string
@@ -379,12 +315,6 @@ export async function verifyPayPalWebhookSignature(
   return result.verification_status === "SUCCESS";
 }
 
-/**
- * REPLAY-ATTACK PROTECTION: rejects a webhook whose transmission_time is
- * further from "now" than this window, regardless of whether the signature
- * itself is otherwise valid. A stolen-but-genuinely-signed old payload
- * cannot be replayed indefinitely.
- */
 export function isPayPalTransmissionTimeFresh(transmissionTime: string, maxAgeMs: number = 5 * 60 * 1000): boolean {
   const transmittedAt = new Date(transmissionTime).getTime();
   if (Number.isNaN(transmittedAt)) return false;

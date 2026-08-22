@@ -1,18 +1,9 @@
 /**
- * Shared, general-purpose HTTP client for frontend feature modules.
+ * Shared HTTP client for frontend feature modules.
  *
- * This mirrors the auth convention already used throughout the app
- * (see src/App.tsx and src/features/ai/credits/creditApiClient.ts):
- * the access token is persisted in localStorage under
- * "aurapost_access_token" and sent as a Bearer token on every request.
- *
- * This performs real network requests against the app's existing
- * Express API (server/*) — it does not mock or stub any responses.
- * Callers (e.g. features/settings/api/settings.api.ts) are responsible
- * for the resource paths they request.
+ * Authentication is carried by same-origin HttpOnly cookies issued by the
+ * server. Browser JavaScript never reads or persists JWT values.
  */
-
-const ACCESS_TOKEN_STORAGE_KEY = 'aurapost_access_token';
 
 export class ApiError extends Error {
   status: number;
@@ -26,24 +17,8 @@ export class ApiError extends Error {
   }
 }
 
-function getAuthToken(): string | null {
-  try {
-    return localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
 function buildHeaders(hasBody: boolean): HeadersInit {
-  const headers: Record<string, string> = {};
-  if (hasBody) {
-    headers['Content-Type'] = 'application/json';
-  }
-  const token = getAuthToken();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
+  return hasBody ? { 'Content-Type': 'application/json' } : {};
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -65,6 +40,7 @@ async function request<T>(method: string, url: string, payload?: unknown): Promi
   const hasBody = payload !== undefined;
   const response = await fetch(url, {
     method,
+    credentials: 'same-origin',
     headers: buildHeaders(hasBody),
     body: hasBody ? JSON.stringify(payload) : undefined,
   });
