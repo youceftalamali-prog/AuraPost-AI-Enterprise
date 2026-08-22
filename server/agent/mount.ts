@@ -9,6 +9,7 @@ import {
   normalizeIdempotencyKey,
 } from './contracts';
 import { createAuraAgentChatRouter } from './agentChatRouter';
+import { createAuraPointsRouter } from '../points/pointsRouter';
 
 const AGENT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS aura_agent_workflows (
@@ -218,6 +219,7 @@ export function createAuraAgentRouter(pool: Pool): Router {
   });
 
   router.use(createAuraAgentChatRouter(pool));
+  router.use('/points', createAuraPointsRouter(pool));
 
   return router;
 }
