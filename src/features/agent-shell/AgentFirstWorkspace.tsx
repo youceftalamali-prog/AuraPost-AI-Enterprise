@@ -4,6 +4,8 @@ import type { Session } from '../../types';
 import { AgentChat } from './AgentChat';
 import { useAgentChat } from './useAgentChat';
 import type { AgentLocale } from './types';
+import type { ReadyTemplate } from '../templates/templateCatalog';
+import { pickText } from '../templates/templateCatalog';
 
 interface Props {
   session: Session;
@@ -16,8 +18,27 @@ function validLocale(value: string): value is AgentLocale {
   return value === 'ar' || value === 'fr' || value === 'en';
 }
 
+function buildTemplatePrompt(template: ReadyTemplate, locale: AgentLocale): string {
+  const title = pickText(template.title, locale);
+  const description = pickText(template.description, locale);
+  const hook = pickText(template.scenario.hook, locale);
+  const scenes = template.scenario.scenes.map((scene, index) => `${index + 1}. ${pickText(scene, locale)}`).join('\n');
+  const cta = pickText(template.scenario.cta, locale);
+
+  if (locale === 'fr') {
+    return `J’ai choisi le modèle "${title}" pour ma publicité.\n\nDétails du modèle:\n- Description: ${description}\n- Format: ${template.aspectRatio}\n- Durée: ${template.durationSeconds}s\n- Hook: ${hook}\n- Scènes:\n${scenes}\n- CTA: ${cta}\n\nDemande-moi maintenant le lien du produit, une image ou une description, puis utilise ce modèle pour préparer l’annonce.`;
+  }
+
+  if (locale === 'en') {
+    return `I selected the "${title}" template for my ad.\n\nTemplate details:\n- Description: ${description}\n- Format: ${template.aspectRatio}\n- Duration: ${template.durationSeconds}s\n- Hook: ${hook}\n- Scenes:\n${scenes}\n- CTA: ${cta}\n\nNow ask me for the product link, product image, or product description, then use this template to prepare the ad.`;
+  }
+
+  return `اخترت قالب "${title}" لإعلاني.\n\nتفاصيل القالب:\n- الوصف: ${description}\n- المقاس: ${template.aspectRatio}\n- المدة: ${template.durationSeconds} ثانية\n- البداية: ${hook}\n- المشاهد:\n${scenes}\n- الدعوة لاتخاذ إجراء: ${cta}\n\nاطلب مني الآن رابط المنتج أو صورة المنتج أو وصف المنتج، ثم استخدم هذا القالب لتحضير الإعلان.`;
+}
+
 export function AgentFirstWorkspace({ session, testMode, onLogout, onAddAuditLog }: Props) {
   const [locale, setLocale] = useState<AgentLocale>('ar');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>();
   const chat = useAgentChat(locale);
   const displayName =
     session.user.full_name ||
@@ -34,6 +55,13 @@ export function AgentFirstWorkspace({ session, testMode, onLogout, onAddAuditLog
 
   const handleQuickPrompt = (prompt: string) => {
     onAddAuditLog('agent.quick_prompt', prompt);
+    void chat.send(prompt);
+  };
+
+  const handleSelectTemplate = (template: ReadyTemplate) => {
+    setSelectedTemplateId(template.id);
+    const prompt = buildTemplatePrompt(template, locale);
+    onAddAuditLog('agent.template_selected', `${template.id}: ${pickText(template.title, locale)}`);
     void chat.send(prompt);
   };
 
@@ -105,6 +133,8 @@ export function AgentFirstWorkspace({ session, testMode, onLogout, onAddAuditLog
           error={chat.error}
           onSend={chat.send}
           onQuickPrompt={handleQuickPrompt}
+          selectedTemplateId={selectedTemplateId}
+          onSelectTemplate={handleSelectTemplate}
         />
       </div>
     </div>

@@ -18,6 +18,8 @@ import {
 import type { AgentLocale } from './types';
 import type { AgentChatMessage } from './agentChatApi';
 import { AGENT_CHAT_COPY, bubbleAlignment, canSend, isRtlLocale, toolLabel } from './chatView';
+import ReadyTemplatesGallery from '../templates/ReadyTemplatesGallery';
+import type { ReadyTemplate } from '../templates/templateCatalog';
 
 interface AgentChatProps {
   locale: AgentLocale;
@@ -26,6 +28,8 @@ interface AgentChatProps {
   error?: string | null;
   onSend: (content: string) => void;
   onQuickPrompt?: (content: string) => void;
+  selectedTemplateId?: string;
+  onSelectTemplate?: (template: ReadyTemplate) => void;
 }
 
 const quickPrompts: Record<AgentLocale, Array<{ label: string; prompt: string }>> = {
@@ -33,29 +37,30 @@ const quickPrompts: Record<AgentLocale, Array<{ label: string; prompt: string }>
     { label: 'رابط منتج', prompt: 'أريد إنشاء إعلان من رابط منتج. اطلب مني الرابط ثم حلله.' },
     { label: 'صورة إعلانية', prompt: 'أريد إنشاء صورة إعلانية احترافية لمنتج.' },
     { label: 'فيديو 4K', prompt: 'أريد إنشاء فيديو إعلاني 4K قصير لمنتج.' },
-    { label: 'قالب جاهز', prompt: 'اعرض لي أفضل القوالب الجاهزة لهذا النوع من المنتجات.' },
+    { label: 'قالب جاهز', prompt: 'اعرض لي القوالب الجاهزة داخل الواجهة لأختار قالبًا.' },
   ],
   fr: [
     { label: 'Lien produit', prompt: 'Je veux créer une publicité à partir d’un lien produit. Demande-moi le lien puis analyse-le.' },
     { label: 'Image pub', prompt: 'Je veux créer une image publicitaire professionnelle pour un produit.' },
     { label: 'Vidéo 4K', prompt: 'Je veux créer une courte vidéo publicitaire 4K pour un produit.' },
-    { label: 'Modèle prêt', prompt: 'Montre-moi les meilleurs modèles prêts pour ce type de produit.' },
+    { label: 'Modèle prêt', prompt: 'Affiche les modèles prêts dans l’interface pour que je choisisse un modèle.' },
   ],
   en: [
     { label: 'Product link', prompt: 'I want to create an ad from a product link. Ask me for the link, then analyze it.' },
     { label: 'Ad image', prompt: 'I want to create a professional ad image for a product.' },
     { label: '4K video', prompt: 'I want to create a short 4K product ad video.' },
-    { label: 'Template', prompt: 'Show me the best ready templates for this product type.' },
+    { label: 'Template', prompt: 'Show the ready templates in the interface so I can choose one.' },
   ],
 };
 
-const assistantIntro: Record<AgentLocale, { title: string; subtitle: string; placeholder: string; disclaimer: string; cloud: string }> = {
+const assistantIntro: Record<AgentLocale, { title: string; subtitle: string; placeholder: string; disclaimer: string; cloud: string; templatesTitle: string }> = {
   ar: {
     title: 'Assistant Aura',
     subtitle: 'صانع فيديوهات وصور إعلانية بالذكاء الاصطناعي',
     placeholder: 'أرسل رابط المنتج، صورة، أو وصف الإعلان...',
     disclaimer: 'قد يحتوي المحتوى المولد بالذكاء الاصطناعي على أخطاء. يرجى التحقق.',
     cloud: 'Cloud',
+    templatesTitle: 'اختر قالبًا جاهزًا',
   },
   fr: {
     title: 'Assistant Aura',
@@ -63,6 +68,7 @@ const assistantIntro: Record<AgentLocale, { title: string; subtitle: string; pla
     placeholder: 'Envoyez un lien produit, une image ou une description...',
     disclaimer: "Le contenu généré par l'IA peut contenir des erreurs. Veuillez vérifier.",
     cloud: 'Cloud',
+    templatesTitle: 'Choisissez un modèle prêt',
   },
   en: {
     title: 'Assistant Aura',
@@ -70,6 +76,7 @@ const assistantIntro: Record<AgentLocale, { title: string; subtitle: string; pla
     placeholder: 'Send a product link, image, or ad description...',
     disclaimer: 'AI-generated content may contain errors. Please verify.',
     cloud: 'Cloud',
+    templatesTitle: 'Choose a ready template',
   },
 };
 
@@ -124,8 +131,9 @@ function ChatRow({ message, locale }: { message: AgentChatMessage; locale: Agent
   );
 }
 
-export function AgentChat({ locale, messages, isSending = false, error = null, onSend, onQuickPrompt }: AgentChatProps) {
+export function AgentChat({ locale, messages, isSending = false, error = null, onSend, onQuickPrompt, selectedTemplateId, onSelectTemplate }: AgentChatProps) {
   const [draft, setDraft] = useState('');
+  const [showTemplates, setShowTemplates] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const text = AGENT_CHAT_COPY[locale];
   const intro = assistantIntro[locale];
@@ -136,7 +144,7 @@ export function AgentChat({ locale, messages, isSending = false, error = null, o
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, isSending]);
+  }, [messages.length, isSending, showTemplates]);
 
   const send = () => {
     const trimmed = draft.trim();
@@ -157,11 +165,21 @@ export function AgentChat({ locale, messages, isSending = false, error = null, o
     }
   };
 
+  const openTemplates = () => {
+    setShowTemplates(true);
+    onQuickPrompt?.(quickPrompts[locale][3].prompt);
+  };
+
+  const selectTemplate = (template: ReadyTemplate) => {
+    setShowTemplates(false);
+    onSelectTemplate?.(template);
+  };
+
   return (
     <section dir={rtl ? 'rtl' : 'ltr'} className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-56 pt-2 sm:px-6">
-        <div className="mx-auto max-w-3xl">
-          {!hasMessages ? (
+        <div className="mx-auto max-w-5xl">
+          {!hasMessages && !showTemplates ? (
             <div className="flex min-h-[calc(100vh-22rem)] flex-col items-center justify-center text-center">
               <div className="mb-7 flex h-28 w-28 items-center justify-center rounded-full bg-lime-200 shadow-inner shadow-white/70">
                 <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-zinc-900 text-3xl font-black text-white shadow-xl">
@@ -178,6 +196,25 @@ export function AgentChat({ locale, messages, isSending = false, error = null, o
           ) : (
             <div className="space-y-5 py-4">
               {visible.map((message) => <ChatRow key={message.id} message={message} locale={locale} />)}
+              {showTemplates && (
+                <div className="rounded-[32px] bg-white/70 p-3 shadow-sm ring-1 ring-white/70 backdrop-blur sm:p-5">
+                  <ReadyTemplatesGallery
+                    locale={locale}
+                    selectedTemplateId={selectedTemplateId}
+                    onSelect={selectTemplate}
+                    onStartPromo={() => {
+                      setShowTemplates(false);
+                      onQuickPrompt?.(
+                        locale === 'ar'
+                          ? 'أريد وضع برو حر بدون قالب ثابت. اسألني عن المنتج والفكرة ثم حضر الإعلان.'
+                          : locale === 'fr'
+                            ? 'Je veux le mode promo libre sans modèle fixe. Demande-moi le produit et l’idée puis prépare la publicité.'
+                            : 'I want free promo mode without a fixed template. Ask me for the product and idea, then prepare the ad.',
+                      );
+                    }}
+                  />
+                </div>
+              )}
               {isSending && (
                 <div className="flex items-center gap-2 text-sm font-medium text-zinc-500">
                   <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
@@ -192,11 +229,11 @@ export function AgentChat({ locale, messages, isSending = false, error = null, o
       <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#f8f8f8] via-[#f8f8f8]/95 to-transparent px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-8 sm:px-6">
         <div className="mx-auto max-w-3xl">
           <div className="mb-3 flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {quickPrompts[locale].map((item) => (
+            {quickPrompts[locale].map((item, index) => (
               <button
                 key={item.label}
                 type="button"
-                onClick={() => onQuickPrompt?.(item.prompt)}
+                onClick={() => (index === 3 ? openTemplates() : onQuickPrompt?.(item.prompt))}
                 className="shrink-0 rounded-full bg-white px-5 py-3 text-sm font-semibold text-zinc-600 shadow-sm ring-1 ring-zinc-200 transition hover:bg-emerald-50 hover:text-emerald-700"
               >
                 {item.label}
