@@ -1,24 +1,15 @@
-// Injectable tool executor registry for the Phase 3 conversational agent (t143).
-//
-// `runToolCallingLoop` takes a `Record<string, ToolExecutor>`; this module
-// builds that registry for the 7 capabilities defined in toolCallingModel.
-//
-// These are deliberately FACADE executors: the real downstream services
-// (product import, market analysis, media/video render, export) are built in
-// Phase 5. Until then each executor validates its call and returns a
-// structured, GATED result: `creditsCharged: 0` and a `pending_backend`
-// status, so the loop is fully runnable and unit tested now without charging
-// credits or performing any I/O. Swapping a facade for a live executor later is
-// a one-line change in `createToolExecutors`.
+// Injectable tool executor registry for the conversational Aura agent.
 import { type AgentLocale } from './contracts';
 import { AGENT_TOOL_NAMES, getToolDefinition, validateToolCall, type AgentToolCall } from './toolCallingModel';
 import type { ToolExecutionContext, ToolExecutionResult, ToolExecutor } from './toolCallingLoop';
+import { assertPublicProductUrl } from '../imports/productUrlPolicy';
+import { scrapeShopifyProduct, validateShopifyUrl, type ExtractedProduct } from '../shopify-extractor';
 
-/** Status stamped on facade results until the real backend is wired (Phase 5). */
 export const AGENT_EXECUTOR_STATUS_PENDING = 'pending_backend';
+export const AGENT_EXECUTOR_STATUS_COMPLETED = 'completed';
+export const AGENT_EXECUTOR_STATUS_UNSUPPORTED = 'unsupported_source';
 
 export interface ToolExecutorDeps {
-  /** Injectable clock so tests are deterministic. */
   now?: () => string;
 }
 
@@ -68,10 +59,44 @@ function describeExecution(name: string, locale: AgentLocale): string {
   return MESSAGE_TEMPLATES[safeLocale](label);
 }
 
+function textForImportedProduct(product: ExtractedProduct, locale: AgentLocale): string {
+  const imageCount = product.images?.length ?? 0;
+  const price = product.price === null || product.price === undefined ? '—' : `${product.price} ${product.currency || ''}`.trim();
+  if (locale === 'fr') {
+    return [
+      'Produit importé depuis le lien.',
+      `Nom: ${product.name}`,
+      `Marque: ${product.brand || product.vendor || '—'}`,
+      `Catégorie: ${product.category || '—'}`,
+      `Prix: ${price}`,
+      `Images trouvées: ${imageCount}`,
+      product.extractionError ? `Note: ${product.extractionError}` : '',
+    ].filter(Boolean).join('\n');
+  }
+  if (locale === 'en') {
+    return [
+      'Product imported from the link.',
+      `Name: ${product.name}`,
+      `Brand: ${product.brand || product.vendor || '—'}`,
+      `Category: ${product.category || '—'}`,
+      `Price: ${price}`,
+      `Images found: ${imageCount}`,
+      product.extractionError ? `Note: ${product.extractionError}` : '',
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    'تم استيراد المنتج من الرابط.',
+    `الاسم: ${product.name}`,
+    `العلامة: ${product.brand || product.vendor || '—'}`,
+    `الفئة: ${product.category || '—'}`,
+    `السعر: ${price}`,
+    `عدد الصور الموجودة: ${imageCount}`,
+    product.extractionError ? `ملاحظة: ${product.extractionError}` : '',
+  ].filter(Boolean).join('\n');
+}
+
 function makeFacadeExecutor(name: string, now: () => string): ToolExecutor {
   return async (call: AgentToolCall, context: ToolExecutionContext): Promise<ToolExecutionResult> => {
-    // Defensive re-validation; the loop validates too, but executors must never
-    // trust their input blindly.
     validateToolCall(call);
     const def = getToolDefinition(name);
     return {
@@ -91,16 +116,81 @@ function makeFacadeExecutor(name: string, now: () => string): ToolExecutor {
   };
 }
 
-/**
- * Builds the tool name -> executor registry passed to `runToolCallingLoop`.
- * Every tool in the registry gets a facade executor. Replace individual entries
- * with live executors as Phase 5 lands them.
- */
+function makeImportProductExecutor(now: () => string): ToolExecutor {
+  return async (call: AgentToolCall, context: ToolExecutionContext): Promise<ToolExecutionResult> => {
+    validateToolCall(call);
+    const source = String(call.arguments.source || '').trim();
+    const sourceType = String(call.arguments.sourceType || '').trim();
+
+    if (sourceType !== 'url') {
+      return {
+        content:
+          context.locale === 'ar'
+            ? 'استيراد المنتج من الصور لم يتم ربطه بعد. أرسل رابط منتج حاليًا.'
+            : context.locale === 'fr'
+              ? 'L’import depuis image n’est pas encore connecté. Envoyez un lien produit pour le moment.'
+              : 'Image-based product import is not connected yet. Please send a product link for now.',
+        creditsCharged: 0,
+        toolResult: {
+          tool: call.name,
+          status: AGENT_EXECUTOR_STATUS_UNSUPPORTED,
+          reason: 'image_import_not_connected',
+          sourceType,
+          requestedAt: now(),
+          workspaceId: context.workspaceId,
+          conversationId: context.conversationId,
+        },
+      };
+    }
+
+    const safeUrl = await assertPublicProductUrl(source);
+    const platform = validateShopifyUrl(safeUrl) ? 'shopify' : 'generic_url';
+
+    if (platform !== 'shopify') {
+      return {
+        content:
+          context.locale === 'ar'
+            ? 'وصلني الرابط وهو آمن، لكن الاستيراد الحقيقي موصول حاليًا بروابط Shopify التي تحتوي على /products/. أرسل رابط منتج Shopify أو سنربط المستخرج العام في الخطوة التالية.'
+            : context.locale === 'fr'
+              ? 'Le lien est sûr, mais l’import réel est actuellement connecté aux liens Shopify contenant /products/. Envoyez un lien Shopify ou nous connecterons l’extracteur générique ensuite.'
+              : 'The link is safe, but live import is currently wired for Shopify product links containing /products/. Send a Shopify product link, or we will connect the generic extractor next.',
+        creditsCharged: 0,
+        toolResult: {
+          tool: call.name,
+          status: AGENT_EXECUTOR_STATUS_UNSUPPORTED,
+          reason: 'generic_url_extractor_not_connected',
+          sourceUrl: safeUrl,
+          sourcePlatform: platform,
+          requestedAt: now(),
+          workspaceId: context.workspaceId,
+          conversationId: context.conversationId,
+        },
+      };
+    }
+
+    const product = await scrapeShopifyProduct(safeUrl, null);
+    return {
+      content: textForImportedProduct(product, context.locale),
+      creditsCharged: 0,
+      toolResult: {
+        tool: call.name,
+        status: AGENT_EXECUTOR_STATUS_COMPLETED,
+        sourceUrl: safeUrl,
+        sourcePlatform: product.source_platform || platform,
+        product,
+        requestedAt: now(),
+        workspaceId: context.workspaceId,
+        conversationId: context.conversationId,
+      },
+    };
+  };
+}
+
 export function createToolExecutors(deps: ToolExecutorDeps = {}): Record<string, ToolExecutor> {
   const now = deps.now ?? (() => new Date().toISOString());
   const registry: Record<string, ToolExecutor> = {};
   for (const name of AGENT_TOOL_NAMES) {
-    registry[name] = makeFacadeExecutor(name, now);
+    registry[name] = name === 'import_product' ? makeImportProductExecutor(now) : makeFacadeExecutor(name, now);
   }
   return registry;
 }
